@@ -101,4 +101,4 @@ BibTeX (template)
 
 ## License
 
-This project builds on React, React Flow, and Vite. See their licenses for details. Add a project license here if applicable.
+This project builds on React, React Flow, and Vite. See their licenses for details. Check also the project license.
