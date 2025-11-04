@@ -69,9 +69,18 @@ Interactive visual pipeline dashboard built with React Flow and Vite. It provide
 ## Implementation Details
 
 - React Flow: `nodeTypes` is defined outside the component to avoid dev warnings
-- MiniMap preview: serialized SVG → high‑DPI PNG via canvas
+- MiniMap preview: serialized SVG → high-DPI PNG via canvas
 - Full dashboard screenshot: dynamic import of `html-to-image` and `toPng(rootEl, { pixelRatio })`
 - Dark mode: toggled by `data-theme` attribute on `<html>` and CSS variables
+
+## Node Attributes
+
+- Dataset nodes expose fixed inputs: source type (file or folder), dataset type (PNG/JPEG, TIFF/TIF, NPY/NPZ – enabled when the source is a folder), phase (binary or multi-phase), and the maximum samples to load.
+- Concat, Figure Vis, and Text Log nodes are structural only; they cannot be edited.
+- Segmentation nodes allow selecting `otsu` or `EXP`. When `EXP` is chosen, an editor is shown for per-line `$p` expressions (`$p = 2; if $p > 0`, etc.).
+- Filter nodes provide filter type (mean, median, gaussian, custom), kernel size, and an optional custom kernel grid activated when `custom` is selected.
+- Structural Descriptor nodes include selectable descriptor checkboxes, dynamic numeric pixel values, a direction multi-select (X/Y/Z), lag distance, and a slider-controlled step (1–10).
+- Simulation nodes offer a type selector for Diffusivity or Permeability.
 
 ## Contributing
 

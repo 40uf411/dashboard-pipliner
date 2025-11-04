@@ -669,6 +669,22 @@ body {
   color: var(--muted-text);
 }
 
+.checkbox-group {
+  display: grid;
+  gap: 6px;
+}
+
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.checkbox-option input {
+  accent-color: var(--accent);
+}
+
 .field-input {
   padding: 8px 10px;
   border-radius: 12px;
@@ -811,6 +827,11 @@ input, textarea {
   color: var(--text-color);
   cursor: pointer;
   font-size: 0.92rem;
+}
+
+.context-item.disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 [data-theme="light"] .context-item,

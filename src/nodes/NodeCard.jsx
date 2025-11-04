@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { Handle, Position } from 'reactflow'
 import './nodeStyles.css'
+import { getParamEntries } from './nodeDefinitions.js'
 
 const COLORS = {
   orange: '#f97316',
@@ -12,16 +13,25 @@ const COLORS = {
   azure: '#3b82f6',
 }
 
-function ParamList({ params }) {
+function ParamList({ templateKey, params }) {
   if (!params) return null
-  const entries = Object.entries(params)
+  let entries = []
+  if (templateKey) {
+    entries = getParamEntries(templateKey, params)
+  }
+  if (!entries.length) {
+    entries = Object.entries(params || {}).map(([k, v]) => ({
+      key: k,
+      value: Array.isArray(v) ? v.join(', ') : String(v),
+    }))
+  }
   if (!entries.length) return null
   return (
     <div className="rf-node-params">
-      {entries.map(([k, v]) => (
-        <div key={k} className="rf-param-row">
-          <span className="rf-param-key">{k}</span>
-          <span className="rf-param-value">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+      {entries.map(({ key, value }) => (
+        <div key={key} className="rf-param-row">
+          <span className="rf-param-key">{key}</span>
+          <span className="rf-param-value">{Array.isArray(value) ? value.join(', ') : String(value)}</span>
         </div>
       ))}
     </div>
@@ -38,6 +48,7 @@ function NodeCard({ data, selected }) {
     sources = 1,
     subtitle,
     alert,
+    templateKey,
   } = data || {}
   const accent = COLORS[color] ?? COLORS.grey
 
@@ -58,7 +69,7 @@ function NodeCard({ data, selected }) {
       </div>
       <div className="rf-node-body">
         {body}
-        <ParamList params={params} />
+        <ParamList templateKey={templateKey} params={params} />
         {alert ? (
           <div className={`rf-alert rf-alert-${alert.color || 'green'}`}>{alert.message || ''}</div>
         ) : null}

@@ -16,179 +16,52 @@ import LeftDock from './components/LeftDock.jsx'
 import Toast from './components/Toast.jsx'
 import DashboardMenu from './components/DashboardMenu.jsx'
 import ConfirmDialog from './components/ConfirmDialog.jsx'
+import { createNodeData, getNodeTemplate } from './nodes/nodeDefinitions.js'
 
 // Memoized/static React Flow node types to avoid recreating objects each render (#002)
 const nodeTypes = { card: NodeCard }
 
+const makeNode = (id, templateKey, position, overrides = {}) => ({
+  id,
+  type: 'card',
+  position,
+  data: createNodeData(templateKey, overrides),
+  sourcePosition: 'right',
+  targetPosition: 'left',
+})
+
+const canEditNode = (node) => {
+  if (!node) return false
+  const templateKey = node.data?.templateKey
+  if (!templateKey) {
+    const params = node.data?.params
+    return params && Object.keys(params).length > 0
+  }
+  const template = getNodeTemplate(templateKey)
+  if (!template) {
+    const params = node.data?.params
+    return params && Object.keys(params).length > 0
+  }
+  return Boolean(template.editable)
+}
+
 const initialNodes = [
   // Input nodes (green) — no input, one output
-  {
-    id: 'in-a',
-    type: 'card',
-    position: { x: 0, y: 20 },
-    data: {
-      title: 'Input',
-      subtitle: 'Dataset A',
-      body: 'Source dataset',
-      color: 'green',
-      targets: 0,
-      sources: 1,
-      params: { 'dataset path': '/data/dataset_a.csv' },
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
-  {
-    id: 'in-b',
-    type: 'card',
-    position: { x: 0, y: 170 },
-    data: {
-      title: 'Input',
-      subtitle: 'Dataset B',
-      body: 'Source dataset',
-      color: 'green',
-      targets: 0,
-      sources: 1,
-      params: { 'dataset path': '/data/dataset_b.csv' },
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
+  makeNode('in-a', 'input-dataset', { x: 0, y: 20 }, { subtitle: 'Dataset A' }),
+  makeNode('in-b', 'input-dataset', { x: 0, y: 170 }, { subtitle: 'Dataset B' }),
 
   // Processing nodes (violet)
-  {
-    id: 'concat',
-    type: 'card',
-    position: { x: 240, y: 95 },
-    data: {
-      title: 'Processing',
-      subtitle: 'Concat',
-      body: 'Combine inputs',
-      color: 'violet',
-      targets: 2,
-      sources: 1,
-      params: {},
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
-  {
-    id: 'seg',
-    type: 'card',
-    position: { x: 480, y: 95 },
-    data: {
-      title: 'Processing',
-      subtitle: 'Segmentation',
-      body: 'Image segmentation',
-      color: 'violet',
-      targets: 1,
-      sources: 1,
-      params: { algorithm: 'Watershed' },
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
-  {
-    id: 'filter',
-    type: 'card',
-    position: { x: 720, y: 95 },
-    data: {
-      title: 'Processing',
-      subtitle: 'Filter',
-      body: 'Signal filtering',
-      color: 'violet',
-      targets: 1,
-      sources: 1,
-      params: { filter: 'Gaussian', 'kernel size': '3x3' },
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
+  makeNode('concat', 'processing-concat', { x: 240, y: 95 }),
+  makeNode('seg', 'processing-segmentation', { x: 480, y: 95 }),
+  makeNode('filter', 'processing-filter', { x: 720, y: 95 }),
 
   // Analytics nodes (red)
-  {
-    id: 'desc',
-    type: 'card',
-    position: { x: 960, y: 20 },
-    data: {
-      title: 'Analytics',
-      subtitle: 'Structural Descriptor',
-      body: 'Compute descriptors',
-      color: 'red',
-      targets: 1,
-      sources: 1,
-      params: {
-        descriptors: ['Porosity', 'Surface Area'],
-        phase: ['Alpha', 'Beta'],
-        direction: ['X', 'Y'],
-      },
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
-  {
-    id: 'sim',
-    type: 'card',
-    position: { x: 960, y: 170 },
-    data: {
-      title: 'Analytics',
-      subtitle: 'Simulation',
-      body: 'Run simulations',
-      color: 'red',
-      targets: 1,
-      sources: 1,
-      params: { 'simulation type': 'Monte Carlo' },
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
+  makeNode('desc', 'analytics-structural', { x: 960, y: 20 }),
+  makeNode('sim', 'analytics-simulation', { x: 960, y: 170 }),
 
   // Output nodes (azure) — one input, no output
-  {
-    id: 'fig',
-    type: 'card',
-    position: { x: 1200, y: 0 },
-    data: {
-      title: 'Output',
-      subtitle: 'Figure Vis',
-      body: 'Visualize results',
-      color: 'azure',
-      targets: 1,
-      sources: 0,
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
-  {
-    id: 'log',
-    type: 'card',
-    position: { x: 1200, y: 80 },
-    data: {
-      title: 'Output',
-      subtitle: 'Text Log',
-      body: 'Console/Log output',
-      color: 'azure',
-      targets: 1,
-      sources: 0,
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
-  {
-    id: 'save',
-    type: 'card',
-    position: { x: 1200, y: 170 },
-    data: {
-      title: 'Output',
-      subtitle: 'File Save',
-      body: 'Persist to file',
-      color: 'azure',
-      targets: 1,
-      sources: 0,
-    },
-    sourcePosition: 'right',
-    targetPosition: 'left',
-  },
+  makeNode('fig', 'output-figure', { x: 1200, y: 0 }),
+  makeNode('log', 'output-log', { x: 1200, y: 80 }),
 ]
 
 const initialEdges = [
@@ -204,7 +77,7 @@ const initialEdges = [
   // outputs
   { id: 'e-desc-fig', source: 'desc', target: 'fig' },
   { id: 'e-desc-log', source: 'desc', target: 'log' },
-  { id: 'e-sim-save', source: 'sim', target: 'save' },
+  { id: 'e-sim-log', source: 'sim', target: 'log' },
 ]
 
 function App() {
@@ -400,78 +273,18 @@ function App() {
       type: 'card',
       position: position ?? { x: 180, y: 60 + nodes.length * 40 },
     }
-    let data = {}
-    switch (key) {
-      case 'input-dataset':
-        data = {
-          title: 'Input',
-          subtitle: 'Dataset',
-          body: 'Source dataset',
-          color: 'green',
-          targets: 0,
-          sources: 1,
-          params: { 'dataset path': '/data/new.csv' },
-        }
-        break
-      case 'processing-concat':
-        data = { title: 'Processing', subtitle: 'Concat', body: 'Combine inputs', color: 'violet', targets: 2, sources: 1 }
-        break
-      case 'processing-segmentation':
-        data = {
-          title: 'Processing',
-          subtitle: 'Segmentation',
-          body: 'Image segmentation',
-          color: 'violet',
+    const template = getNodeTemplate(key)
+    const data = template
+      ? createNodeData(key)
+      : {
+          title: 'Node',
+          subtitle: template?.subtitle ?? 'Custom',
+          color: 'grey',
           targets: 1,
           sources: 1,
-          params: { algorithm: 'Watershed' },
+          templateKey: key,
+          params: {},
         }
-        break
-      case 'processing-filter':
-        data = {
-          title: 'Processing',
-          subtitle: 'Filter',
-          body: 'Signal filtering',
-          color: 'violet',
-          targets: 1,
-          sources: 1,
-          params: { filter: 'Gaussian', 'kernel size': '3x3' },
-        }
-        break
-      case 'analytics-structural':
-        data = {
-          title: 'Analytics',
-          subtitle: 'Structural Descriptor',
-          body: 'Compute descriptors',
-          color: 'red',
-          targets: 1,
-          sources: 1,
-          params: { descriptors: ['Porosity'], phase: ['Alpha'], direction: ['X'] },
-        }
-        break
-      case 'analytics-simulation':
-        data = {
-          title: 'Analytics',
-          subtitle: 'Simulation',
-          body: 'Run simulations',
-          color: 'red',
-          targets: 1,
-          sources: 1,
-          params: { 'simulation type': 'Monte Carlo' },
-        }
-        break
-      case 'output-figure':
-        data = { title: 'Output', subtitle: 'Figure Vis', body: 'Visualize results', color: 'azure', targets: 1, sources: 0 }
-        break
-      case 'output-log':
-        data = { title: 'Output', subtitle: 'Text Log', body: 'Console/Log output', color: 'azure', targets: 1, sources: 0 }
-        break
-      case 'output-save':
-        data = { title: 'Output', subtitle: 'File Save', body: 'Persist to file', color: 'azure', targets: 1, sources: 0 }
-        break
-      default:
-        data = { title: 'Node', color: 'grey', targets: 1, sources: 1 }
-    }
 
     setNodes((nds) => [
       ...nds,
@@ -592,6 +405,8 @@ function App() {
         onNodeDoubleClick={(_, node) => {
           if (executing) {
             addToast('Cannot edit nodes while executing.', 'error')
+          } else if (!canEditNode(node)) {
+            addToast('This node has no editable attributes.', 'info')
           } else {
             setEditingNode(node)
           }
@@ -679,8 +494,13 @@ function App() {
         <ContextMenu
           x={menu.x}
           y={menu.y}
+          canEdit={canEditNode(menu.node)}
           onEdit={() => {
-            setEditingNode(menu.node)
+            if (!canEditNode(menu.node)) {
+              addToast('This node has no editable attributes.', 'info')
+            } else {
+              setEditingNode(menu.node)
+            }
             setMenu({ open: false, x: 0, y: 0, node: null })
           }}
           onDelete={() => {

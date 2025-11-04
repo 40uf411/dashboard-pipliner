@@ -1,4 +1,4 @@
-export default function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
+export default function ContextMenu({ x, y, onEdit, onDelete, onClose, canEdit = true }) {
   return (
     <div
       className="context-menu"
@@ -7,12 +7,13 @@ export default function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
-        className="context-item"
+        className={`context-item${canEdit ? '' : ' disabled'}`}
         role="button"
         tabIndex={0}
         onClick={onEdit}
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onEdit()}
         aria-label="Edit node"
+        aria-disabled={!canEdit}
       >
         Edit
       </div>

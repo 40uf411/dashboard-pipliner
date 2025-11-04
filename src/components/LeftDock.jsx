@@ -1,47 +1,12 @@
 import { useState, memo } from 'react'
 import { TbGitBranch, TbHierarchy2, TbDownload } from 'react-icons/tb'
-import { IoAddOutline, IoCodeDownload } from 'react-icons/io5'
+import { IoCodeDownload } from 'react-icons/io5'
 import reactLogo from '../assets/react.svg'
 import NodePreview from './NodePreview.jsx'
-
-const sections = [
-  {
-    key: 'input',
-    title: 'Input',
-    items: [
-      { key: 'input-dataset', label: 'Dataset' },
-    ],
-  },
-  {
-    key: 'processing',
-    title: 'Processing',
-    items: [
-      { key: 'processing-concat', label: 'Concat' },
-      { key: 'processing-segmentation', label: 'Segmentation' },
-      { key: 'processing-filter', label: 'Filter' },
-    ],
-  },
-  {
-    key: 'analytics',
-    title: 'Analytics',
-    items: [
-      { key: 'analytics-structural', label: 'Structural Descriptor' },
-      { key: 'analytics-simulation', label: 'Simulation' },
-    ],
-  },
-  {
-    key: 'output',
-    title: 'Output',
-    items: [
-      { key: 'output-figure', label: 'Figure Vis' },
-      { key: 'output-log', label: 'Text Log' },
-      { key: 'output-save', label: 'File Save' },
-    ],
-  },
-]
+import { NODE_SECTIONS, NODE_TEMPLATES } from '../nodes/nodeDefinitions.js'
 
 function NodesPanel({ onAdd, disabled }) {
-  const [open, setOpen] = useState(['input', 'processing', 'analytics', 'output'])
+  const [open, setOpen] = useState(() => NODE_SECTIONS.map((sec) => sec.key))
   const toggle = (key) =>
     setOpen((arr) => (arr.includes(key) ? arr.filter((k) => k !== key) : [...arr, key]))
 
@@ -49,7 +14,7 @@ function NodesPanel({ onAdd, disabled }) {
     <div className="left-panel" onMouseDown={(e) => e.stopPropagation()}>
       <div className="panel-header">Nodes</div>
       <div className="panel-body">
-        {sections.map((sec) => (
+        {NODE_SECTIONS.map((sec) => (
           <div key={sec.key} className="panel-section">
             <div
               className="collapse-btn"
@@ -63,52 +28,27 @@ function NodesPanel({ onAdd, disabled }) {
             </div>
             {open.includes(sec.key) ? (
               <div className="preview-grid">
-                {sec.items.map((it) => {
-                  // map item key to preview data
-                  let color = 'grey', title = 'Node', subtitle = it.label, description = '', takes = '', returns = ''
-                  switch (it.key) {
-                    case 'input-dataset':
-                      title = 'Input'; subtitle = 'Dataset'; color = 'green';
-                      description = 'Provides a dataset from a file path.'; returns = 'dataset'; break
-                    case 'processing-concat':
-                      title = 'Processing'; subtitle = 'Concat'; color = 'violet';
-                      description = 'Concatenate two datasets into one.'; takes = 'dataset A, dataset B'; returns = 'dataset'; break
-                    case 'processing-segmentation':
-                      title = 'Processing'; subtitle = 'Segmentation'; color = 'violet';
-                      description = 'Segments an image/volume using a selected algorithm.'; takes = 'dataset'; returns = 'segmented dataset'; break
-                    case 'processing-filter':
-                      title = 'Processing'; subtitle = 'Filter'; color = 'violet';
-                      description = 'Applies a configurable filter with kernel size.'; takes = 'dataset'; returns = 'filtered dataset'; break
-                    case 'analytics-structural':
-                      title = 'Analytics'; subtitle = 'Structural Descriptor'; color = 'red';
-                      description = 'Computes structural descriptors for selected phases/directions.'; takes = 'dataset'; returns = 'descriptors'; break
-                    case 'analytics-simulation':
-                      title = 'Analytics'; subtitle = 'Simulation'; color = 'red';
-                      description = 'Runs a simulation over the input data.'; takes = 'dataset'; returns = 'results'; break
-                    case 'output-figure':
-                      title = 'Output'; subtitle = 'Figure Vis'; color = 'azure';
-                      description = 'Visualizes results as plots/figures.'; takes = 'dataset'; break
-                    case 'output-log':
-                      title = 'Output'; subtitle = 'Text Log'; color = 'azure';
-                      description = 'Logs textual output for inspection.'; takes = 'dataset'; break
-                    case 'output-save':
-                      title = 'Output'; subtitle = 'File Save'; color = 'azure';
-                      description = 'Saves results to a file path.'; takes = 'dataset'; break
-                  }
+                {sec.items.map((key) => {
+                  const template = NODE_TEMPLATES[key]
+                  if (!template) return null
+                  const preview = template.preview || {}
+                  const description = preview.description || ''
+                  const takes = preview.takes || ''
+                  const returns = preview.returns || ''
                   return (
                     <NodePreview
-                      key={it.key}
-                      title={title}
-                      subtitle={subtitle}
-                      color={color}
+                      key={key}
+                      title={template.title}
+                      subtitle={template.subtitle}
+                      color={template.color}
                       draggable={!disabled}
                       description={description}
                       takes={takes}
                       returns={returns}
-                      onClick={() => onAdd(it.key)}
+                      onClick={() => onAdd(key)}
                       onDragStart={(e) => {
                         if (disabled) return
-                        e.dataTransfer.setData('application/reactflow', it.key)
+                        e.dataTransfer.setData('application/reactflow', key)
                         e.dataTransfer.effectAllowed = 'move'
                       }}
                     />
