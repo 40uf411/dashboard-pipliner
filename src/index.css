@@ -58,6 +58,56 @@ body {
   caret-color: var(--text-color);
 }
 
+#dashboard-root {
+  position: relative;
+}
+
+#dashboard-root.pipeline-busy > *:not(.loading-overlay) {
+  filter: blur(12px);
+  pointer-events: none;
+  user-select: none;
+  transition: filter 220ms ease;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.12));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 120;
+}
+
+[data-theme="dark"] .loading-overlay {
+  background: radial-gradient(circle at center, rgba(17, 24, 39, 0.45), rgba(15, 23, 42, 0.65));
+}
+
+.loading-spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 3px solid rgba(148, 163, 184, 0.4);
+  border-top-color: var(--accent);
+  animation: pipeline-spin 0.9s linear infinite;
+}
+
+.loading-text {
+  font-size: 0.92rem;
+  color: var(--muted-text);
+  letter-spacing: 0.4px;
+}
+
+@keyframes pipeline-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Click-out overlay to close dock/context menu */
 .clickout-overlay {
   position: fixed;
@@ -352,6 +402,62 @@ body {
   grid-template-columns: 1fr;
   gap: 16px;
 }
+.pipeline-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.pipeline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(242, 244, 255, 0.46));
+  color: var(--text-color);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 500;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.pipeline-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.pipeline-action svg {
+  color: var(--accent);
+}
+
+.pipeline-action span {
+  pointer-events: none;
+}
+
+[data-theme="dark"] .pipeline-action {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.65));
+  box-shadow: 0 8px 18px rgba(2, 6, 23, 0.55);
+}
+
+[data-theme="dark"] .pipeline-action:hover {
+  border-color: rgba(96, 165, 250, 0.55);
+  box-shadow: 0 12px 26px rgba(2, 6, 23, 0.7);
+}
+
+.pipeline-action.disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+  box-shadow: none;
+  border-style: dashed;
+}
+
 .pipeline-card {
   position: relative;
   height: 160px; /* taller card */
@@ -816,6 +922,16 @@ input, textarea {
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04)) border-box;
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow: 0 16px 40px rgba(2, 6, 23, 0.5);
+}
+
+.context-sep {
+  height: 1px;
+  background: rgba(71, 85, 105, 0.28);
+  margin: 4px 0;
+}
+
+[data-theme="dark"] .context-sep {
+  background: rgba(148, 163, 184, 0.22);
 }
 
 .context-item {

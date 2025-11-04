@@ -1,4 +1,16 @@
-export default function DashboardMenu({ x, y, onAddNode, onResetNodes, onClear, onToggleCompact, onClose }) {
+export default function DashboardMenu({
+  x,
+  y,
+  onAddNode,
+  onResetNodes,
+  onClear,
+  onToggleCompact,
+  onClose,
+  onSavePipeline,
+  onLoadPipeline,
+  onDownloadPipeline,
+  onUploadPipeline,
+}) {
   return (
     <div
       className="context-menu"
@@ -6,6 +18,43 @@ export default function DashboardMenu({ x, y, onAddNode, onResetNodes, onClear, 
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <div
+        className="context-item"
+        role="button"
+        tabIndex={0}
+        onClick={() => { onSavePipeline && onSavePipeline(); onClose(); }}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onSavePipeline && onSavePipeline(), onClose())}
+      >
+        Save pipeline
+      </div>
+      <div
+        className="context-item"
+        role="button"
+        tabIndex={0}
+        onClick={() => { onLoadPipeline && onLoadPipeline(); onClose(); }}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onLoadPipeline && onLoadPipeline(), onClose())}
+      >
+        Load pipeline
+      </div>
+      <div
+        className="context-item"
+        role="button"
+        tabIndex={0}
+        onClick={() => { onDownloadPipeline && onDownloadPipeline(); onClose(); }}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onDownloadPipeline && onDownloadPipeline(), onClose())}
+      >
+        Download pipeline
+      </div>
+      <div
+        className="context-item"
+        role="button"
+        tabIndex={0}
+        onClick={() => { onUploadPipeline && onUploadPipeline(); onClose(); }}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onUploadPipeline && onUploadPipeline(), onClose())}
+      >
+        Upload pipeline
+      </div>
+      <div className="context-sep" />
       <div
         className="context-item"
         role="button"
@@ -45,4 +94,3 @@ export default function DashboardMenu({ x, y, onAddNode, onResetNodes, onClear, 
     </div>
   )
 }
-

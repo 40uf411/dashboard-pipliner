@@ -82,6 +82,14 @@ Interactive visual pipeline dashboard built with React Flow and Vite. It provide
 - Structural Descriptor nodes include selectable descriptor checkboxes, dynamic numeric pixel values, a direction multi-select (X/Y/Z), lag distance, and a slider-controlled step (1–10).
 - Simulation nodes offer a type selector for Diffusivity or Permeability.
 
+## Pipeline Management
+
+- Save the current graph to the browser's local storage; you can quick-save from the Pipeline panel, bottom bar, or canvas context menu.
+- Load pipelines from the Pipelines tab: click any saved card to apply it. A glassy overlay blurs the dashboard while the pipeline is restored.
+- Download exports the pipeline to a portable `.board` file (JSON envelope that preserves nodes, edges, styling, and runtime settings).
+- Upload accepts `.board` files from disk, stores them locally, and asks whether to open the pipeline immediately.
+- All quick actions are mirrored in the bottom toolbar, the left dock (Pipelines panel), and the dashboard context menu.
+
 ## Contributing
 
 - Keep UI additions consistent with existing CSS variables and patterns in `src/index.css`

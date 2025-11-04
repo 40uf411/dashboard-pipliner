@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FiGitBranch } from 'react-icons/fi'
 import { MdDarkMode } from 'react-icons/md'
-import { IoSunnyOutline, IoLockOpenOutline, IoLockClosed } from 'react-icons/io5'
+import { IoSunnyOutline, IoLockOpenOutline, IoLockClosed, IoSave, IoOpen } from 'react-icons/io5'
 import { PiWarningBold } from 'react-icons/pi'
 import { LuMinimize2, LuMaximize2 } from 'react-icons/lu'
 import { TbViewportWide, TbTextSize } from 'react-icons/tb'
@@ -9,6 +9,7 @@ import { TbScreenshot } from 'react-icons/tb'
 import { ImLab } from 'react-icons/im'
 import { FaPlay } from 'react-icons/fa'
 import { FaStop } from 'react-icons/fa6'
+import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
 
 function BottomBar({
   nodesCount,
@@ -28,6 +29,10 @@ function BottomBar({
   execResult = null,
   compact = false,
   onScreenshot,
+  onSavePipeline,
+  onLoadPipeline,
+  onDownloadPipeline,
+  onUploadPipeline,
 }) {
   // keep slider value within bounds
   const clampedZoom = useMemo(() => Math.min(150, Math.max(50, Math.round(zoom))), [zoom])
@@ -242,6 +247,62 @@ function BottomBar({
           {isDark ? <IoSunnyOutline size={18} /> : <MdDarkMode size={18} />}
         </div>
         <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>{isDark ? 'Dark' : 'Light'}</span>
+      </div>
+
+      <div className="bar-item" title="Save pipeline">
+        <div
+          className="bar-btn"
+          role="button"
+          tabIndex={0}
+          onClick={() => onSavePipeline && onSavePipeline()}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSavePipeline && onSavePipeline()}
+          aria-label="Save pipeline"
+        >
+          <IoSave size={18} />
+        </div>
+        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Save</span>
+      </div>
+
+      <div className="bar-item" title="Load pipeline">
+        <div
+          className="bar-btn"
+          role="button"
+          tabIndex={0}
+          onClick={() => onLoadPipeline && onLoadPipeline()}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onLoadPipeline && onLoadPipeline()}
+          aria-label="Load pipeline"
+        >
+          <IoOpen size={18} />
+        </div>
+        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Load</span>
+      </div>
+
+      <div className="bar-item" title="Download pipeline">
+        <div
+          className="bar-btn"
+          role="button"
+          tabIndex={0}
+          onClick={() => onDownloadPipeline && onDownloadPipeline()}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onDownloadPipeline && onDownloadPipeline()}
+          aria-label="Download pipeline"
+        >
+          <RiDownloadCloud2Fill size={18} />
+        </div>
+        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Download</span>
+      </div>
+
+      <div className="bar-item" title="Upload pipeline (.board)">
+        <div
+          className="bar-btn"
+          role="button"
+          tabIndex={0}
+          onClick={() => onUploadPipeline && onUploadPipeline()}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onUploadPipeline && onUploadPipeline()}
+          aria-label="Upload pipeline"
+        >
+          <RiUploadCloud2Fill size={18} />
+        </div>
+        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Upload</span>
       </div>
 
       <div className="bar-sep" />

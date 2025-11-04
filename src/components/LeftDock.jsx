@@ -1,6 +1,7 @@
 import { useState, memo } from 'react'
 import { TbGitBranch, TbHierarchy2, TbDownload } from 'react-icons/tb'
-import { IoCodeDownload } from 'react-icons/io5'
+import { IoSave, IoOpen } from 'react-icons/io5'
+import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
 import reactLogo from '../assets/react.svg'
 import NodePreview from './NodePreview.jsx'
 import { NODE_SECTIONS, NODE_TEMPLATES } from '../nodes/nodeDefinitions.js'
@@ -72,7 +73,21 @@ function EmptyPanel({ title }) {
   )
 }
 
-function LeftDock({ active, onToggle, onAddNode, disabled = false, preview }) {
+function LeftDock({
+  active,
+  onToggle,
+  onAddNode,
+  disabled = false,
+  preview,
+  pipelines = [],
+  currentPipelineId,
+  currentPipelineName,
+  onLoadPipeline,
+  onQuickLoad,
+  onSavePipeline,
+  onDownloadPipeline,
+  onUploadPipeline,
+}) {
   return (
     <>
       <div className="left-nav" onMouseDown={(e) => e.stopPropagation()}>
@@ -115,7 +130,18 @@ function LeftDock({ active, onToggle, onAddNode, disabled = false, preview }) {
         active === 'nodes' ? (
           <NodesPanel onAdd={onAddNode} disabled={disabled} />
         ) : active === 'pipelines' ? (
-          <PipelinesPanel onClose={() => onToggle('pipelines')} preview={preview} />
+          <PipelinesPanel
+            onClose={() => onToggle('pipelines')}
+            preview={preview}
+            pipelines={pipelines}
+            currentPipelineId={currentPipelineId}
+            currentPipelineName={currentPipelineName}
+            onLoadPipeline={onLoadPipeline}
+            onQuickLoad={onQuickLoad}
+            onSavePipeline={onSavePipeline}
+            onDownloadPipeline={onDownloadPipeline}
+            onUploadPipeline={onUploadPipeline}
+          />
         ) : (
           <EmptyPanel title="Outputs" />
         )
@@ -126,66 +152,153 @@ function LeftDock({ active, onToggle, onAddNode, disabled = false, preview }) {
 
 export default memo(LeftDock)
 
-function PipelinesPanel({ onClose, preview }) {
-  const cards = [
-    { id: 'cur', title: 'Current: Clay data analysis', current: true, img: preview || reactLogo },
-    { id: 'p1', title: 'Microstructure QA', img: reactLogo },
-    { id: 'p2', title: 'Crack Detection', img: reactLogo },
-    { id: 'p3', title: 'Porosity Estimation', img: reactLogo },
-  ]
-
+function PipelinesPanel({
+  onClose,
+  preview,
+  pipelines = [],
+  currentPipelineId,
+  currentPipelineName,
+  onLoadPipeline,
+  onQuickLoad,
+  onSavePipeline,
+  onDownloadPipeline,
+  onUploadPipeline,
+}) {
   const [pulse, setPulse] = useState(null)
 
-  const loadPipeline = (id) => {
-    // Always pulse; only close for non-current pipelines
+  const currentPipeline = pipelines.find((p) => p.id === currentPipelineId) || null
+  const currentImage = preview || currentPipeline?.preview || reactLogo
+  const otherPipelines = pipelines.filter((p) => p.id !== currentPipelineId)
+  const hasSaved = pipelines.length > 0
+  const disableLoad = pipelines.length === 0
+
+  const handleLoad = (id) => {
+    if (!id || id === currentPipelineId) {
+      setPulse(id || 'current')
+      setTimeout(() => setPulse(null), 320)
+      return
+    }
     setPulse(id)
     setTimeout(() => {
       setPulse(null)
-      if (id !== 'cur') onClose && onClose()
-    }, 450)
+      onLoadPipeline && onLoadPipeline(id)
+      onClose && onClose()
+    }, 320)
   }
 
   return (
     <div className="left-panel" onMouseDown={(e) => e.stopPropagation()}>
       <div className="panel-header">Pipelines</div>
       <div className="panel-body">
-        {/* Current pipeline card */}
-        <div
-          className={`pipeline-card current${pulse === 'cur' ? ' pulse-gold' : ''}`}
-          style={{ backgroundImage: `url(${cards[0].img})` }}
-          role="button"
-          tabIndex={0}
-          onClick={() => loadPipeline('cur')}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && loadPipeline('cur')}
-        >
-          <div className="bottom-blur">
-            <div className="caption">{cards[0].title}</div>
+        <div className="pipeline-actions">
+          <div
+            className="pipeline-action"
+            role="button"
+            tabIndex={0}
+            onClick={() => onSavePipeline && onSavePipeline()}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSavePipeline && onSavePipeline()}
+            title="Save current pipeline to your workspace"
+            aria-label="Save pipeline"
+          >
+            <IoSave size={18} />
+            <span>Save</span>
+          </div>
+          <div
+            className={`pipeline-action${disableLoad ? ' disabled' : ''}`}
+            role="button"
+            tabIndex={disableLoad ? -1 : 0}
+            onClick={() => !disableLoad && onQuickLoad && onQuickLoad()}
+            onKeyDown={(e) => {
+              if (disableLoad) return
+              if (e.key === 'Enter' || e.key === ' ') onQuickLoad && onQuickLoad()
+            }}
+            title={disableLoad ? 'Save a pipeline before loading.' : 'Load the most recently saved pipeline'}
+            aria-label="Load pipeline"
+            aria-disabled={disableLoad}
+          >
+            <IoOpen size={18} />
+            <span>Load</span>
+          </div>
+          <div
+            className="pipeline-action"
+            role="button"
+            tabIndex={0}
+            onClick={() => onDownloadPipeline && onDownloadPipeline()}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onDownloadPipeline && onDownloadPipeline()}
+            title="Download the current pipeline as a .board file"
+            aria-label="Download pipeline"
+          >
+            <RiDownloadCloud2Fill size={18} />
+            <span>Download</span>
+          </div>
+          <div
+            className="pipeline-action"
+            role="button"
+            tabIndex={0}
+            onClick={() => onUploadPipeline && onUploadPipeline()}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onUploadPipeline && onUploadPipeline()}
+            title="Upload a .board file and add it to your workspace"
+            aria-label="Upload pipeline"
+          >
+            <RiUploadCloud2Fill size={18} />
+            <span>Upload</span>
           </div>
         </div>
 
-        <div className="pipelines-sep">Other pipelines</div>
-
-        <div className="pipelines-grid">
-          {cards.slice(1).map((c) => (
-            <div
-              key={c.id}
-              className={`pipeline-card${pulse === c.id ? ' pulse-gold' : ''}`}
-              style={{ backgroundImage: `url(${c.img})` }}
-              role="button"
-              tabIndex={0}
-              onClick={() => loadPipeline(c.id)}
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && loadPipeline(c.id)}
-            >
-              <div className="bottom-blur">
-                <div className="caption">{c.title}</div>
-              </div>
-              <div className="hover-overlay">
-                <IoCodeDownload size={26} />
-                <div className="hover-text">Load pipeline</div>
-              </div>
+        <div
+          className={`pipeline-card current${pulse === 'current' ? ' pulse-gold' : ''}`}
+          style={{ backgroundImage: `url(${currentImage})` }}
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setPulse('current')
+            setTimeout(() => setPulse(null), 320)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              setPulse('current')
+              setTimeout(() => setPulse(null), 320)
+            }
+          }}
+        >
+          <div className="bottom-blur">
+            <div className="caption">
+              Current: {currentPipelineName || 'Pipeline'}
             </div>
-          ))}
+          </div>
         </div>
+
+        <div className="pipelines-sep">Saved pipelines</div>
+
+        {otherPipelines.length ? (
+          <div className="pipelines-grid">
+            {otherPipelines.map((p) => (
+              <div
+                key={p.id}
+                className={`pipeline-card${pulse === p.id ? ' pulse-gold' : ''}`}
+                style={{ backgroundImage: `url(${p.preview || reactLogo})` }}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleLoad(p.id)}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleLoad(p.id)}
+              >
+                <div className="bottom-blur">
+                  <div className="caption">{p.name}</div>
+                </div>
+                <div className="hover-overlay">
+                  <IoOpen size={26} />
+                  <div className="hover-text">Load pipeline</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="muted-text" style={{ padding: '14px 0 6px' }}>
+            {hasSaved
+              ? 'All saved pipelines are already loaded.'
+              : 'No saved pipelines yet. Save the current pipeline to build your library.'}
+          </div>
+        )}
       </div>
     </div>
   )

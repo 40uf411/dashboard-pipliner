@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactFlow, {
   Background,
   MiniMap,
@@ -17,6 +17,14 @@ import Toast from './components/Toast.jsx'
 import DashboardMenu from './components/DashboardMenu.jsx'
 import ConfirmDialog from './components/ConfirmDialog.jsx'
 import { createNodeData, getNodeTemplate } from './nodes/nodeDefinitions.js'
+import {
+  readPipelines,
+  upsertPipeline,
+  serialiseBoard,
+  parseBoard,
+  slugify,
+  persistPipelines,
+} from './utils/pipelineStorage.js'
 
 // Memoized/static React Flow node types to avoid recreating objects each render (#002)
 const nodeTypes = { card: NodeCard }
@@ -81,8 +89,8 @@ const initialEdges = [
 ]
 
 function App() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+  const [nodes, setNodes, applyNodesChanges] = useNodesState(initialNodes)
+  const [edges, setEdges, applyEdgesChanges] = useEdgesState(initialEdges)
   const [isDark, setIsDark] = useState(false)
   const [zoomPct, setZoomPct] = useState(100)
   const [rfInstance, setRfInstance] = useState(null)
@@ -100,12 +108,40 @@ function App() {
   const [paneMenu, setPaneMenu] = useState({ open: false, x: 0, y: 0 })
   const [confirmClear, setConfirmClear] = useState(false)
   const [pipelinePreview, setPipelinePreview] = useState(null)
+  const [savedPipelines, setSavedPipelines] = useState([])
+  const [currentPipelineId, setCurrentPipelineId] = useState(null)
+  const [loadingPipeline, setLoadingPipeline] = useState(false)
+  const fileInputRef = useRef(null)
 
-  const addToast = (message, type = 'error', duration = 5000) => {
+  useEffect(() => {
+    const stored = readPipelines()
+    if (stored.length) {
+      setSavedPipelines(stored)
+    }
+  }, [])
+
+  const currentPipelineRecord = useMemo(
+    () => savedPipelines.find((p) => p.id === currentPipelineId) || null,
+    [savedPipelines, currentPipelineId]
+  )
+
+  const onNodesChange = useCallback((changes) => {
+    setCurrentPipelineId(null)
+    applyNodesChanges(changes)
+  }, [applyNodesChanges])
+
+  const onEdgesChange = useCallback((changes) => {
+    setCurrentPipelineId(null)
+    applyEdgesChanges(changes)
+  }, [applyEdgesChanges])
+
+  const addToast = useCallback((message, type = 'error', duration = 5000) => {
     const id = Date.now() + Math.random()
     setToasts((t) => [...t, { id, message, type, duration }])
-  }
-  const dismissToast = (id) => setToasts((t) => t.filter((x) => x.id !== id))
+  }, [])
+  const dismissToast = useCallback((id) => {
+    setToasts((t) => t.filter((x) => x.id !== id))
+  }, [])
   
   // Close dock/context menu on Escape
   useEffect(() => {
@@ -124,12 +160,234 @@ function App() {
       addToast('Cannot edit the graph while executing.', 'error')
       return
     }
+    setCurrentPipelineId(null)
     setEdges((eds) => addEdge(params, eds))
-  }, [executing])
+  }, [executing, addToast])
 
   const toggleDock = (tab) => {
     setActiveDock((cur) => (cur === tab ? null : tab))
   }
+
+  const cloneNodes = (list) =>
+    (Array.isArray(list) ? list : []).map((node) => ({
+      ...node,
+      position: node?.position ? { ...node.position } : node.position,
+      style: node?.style ? { ...node.style } : node.style,
+      data: node?.data ? JSON.parse(JSON.stringify(node.data)) : node.data,
+    }))
+
+  const cloneEdges = (list) =>
+    (Array.isArray(list) ? list : []).map((edge) => ({
+      ...edge,
+      data: edge?.data ? JSON.parse(JSON.stringify(edge.data)) : edge.data,
+      style: edge?.style ? { ...edge.style } : edge.style,
+    }))
+
+  const buildPipelineSnapshot = ({ id, name, createdAt } = {}) => {
+    const timestamp = new Date().toISOString()
+    const baseId = id || currentPipelineRecord?.id || `pl-${Date.now()}`
+    const baseName = (name || currentPipelineRecord?.name || 'Untitled pipeline').trim() || 'Untitled pipeline'
+    return {
+      id: baseId,
+      name: baseName,
+      createdAt: createdAt || currentPipelineRecord?.createdAt || timestamp,
+      nodes: cloneNodes(nodes),
+      edges: cloneEdges(edges),
+      idSeq,
+      preview: pipelinePreview,
+      meta: {
+        ...(currentPipelineRecord?.meta || {}),
+        isDark,
+        zoom: zoomPct,
+        interactive,
+      },
+    }
+  }
+
+  const openPipelinesDock = () => {
+    setActiveDock('pipelines')
+    setPaneMenu({ open: false, x: 0, y: 0 })
+  }
+
+  const handleSavePipeline = () => {
+    if (executing) {
+      addToast('Cannot save while execution is in progress.', 'error')
+      return
+    }
+    const suggested = currentPipelineRecord?.name || 'My pipeline'
+    const name = typeof window !== 'undefined' ? window.prompt('Save pipeline as', suggested) : suggested
+    if (name === null) return
+    const trimmed = String(name || '').trim()
+    if (!trimmed) {
+      addToast('Pipeline name cannot be empty.', 'error')
+      return
+    }
+    const base = buildPipelineSnapshot({
+      id: currentPipelineRecord?.id,
+      name: trimmed,
+      createdAt: currentPipelineRecord?.createdAt,
+    })
+    const nextList = upsertPipeline(savedPipelines, base)
+    setSavedPipelines(nextList)
+    setCurrentPipelineId(base.id)
+    addToast(`Saved "${trimmed}".`, 'success', 2600)
+  }
+
+  const handleDownloadPipeline = () => {
+    const base = buildPipelineSnapshot({
+      id: currentPipelineRecord?.id,
+      name: currentPipelineRecord?.name || 'Current pipeline',
+      createdAt: currentPipelineRecord?.createdAt,
+    })
+    if (!base.nodes.length && !base.edges.length) {
+      addToast('Pipeline is empty; nothing to download.', 'error')
+      return
+    }
+    const serialised = serialiseBoard(base)
+    if (!serialised) {
+      addToast('Failed to serialise pipeline.', 'error')
+      return
+    }
+    try {
+      const blob = new Blob([serialised], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${slugify(base.name)}.board`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      addToast('Download started.', 'success', 2200)
+    } catch (err) {
+      console.error(err)
+      addToast('Failed to download pipeline.', 'error')
+    }
+  }
+
+  const handleLoadPipeline = (pipelineId) => {
+    if (!pipelineId) return
+    const target = savedPipelines.find((p) => p.id === pipelineId)
+    if (!target) {
+      addToast('Saved pipeline not found.', 'error')
+      return
+    }
+    if (executing) {
+      addToast('Cannot load while execution is in progress.', 'error')
+      return
+    }
+    setLoadingPipeline(true)
+    setTimeout(() => {
+      try {
+        const nextZoom = Number.isFinite(target.meta?.zoom) ? target.meta.zoom : 100
+        const nextNodes = cloneNodes(target.nodes || [])
+        const nextEdges = cloneEdges(target.edges || [])
+        setNodes(nextNodes)
+        setEdges(nextEdges)
+        setIdSeq(Number.isFinite(target.idSeq) ? target.idSeq : 1000)
+        setCurrentPipelineId(target.id)
+        setChecking(false)
+        setIssueCount(0)
+        setExecResult(null)
+        const nextDark = typeof target.meta?.isDark === 'boolean' ? target.meta.isDark : isDark
+        const nextInteractive =
+          typeof target.meta?.interactive === 'boolean' ? target.meta.interactive : interactive
+        setIsDark(nextDark)
+        setZoomPct(nextZoom)
+        setInteractive(nextInteractive)
+        if (rfInstance && nextZoom) {
+          rfInstance.zoomTo(nextZoom / 100, { duration: 0 })
+        }
+        setPipelinePreview(target.preview || null)
+        setActiveDock(null)
+        setMenu({ open: false, x: 0, y: 0, node: null })
+        setPaneMenu({ open: false, x: 0, y: 0 })
+        setSavedPipelines((prev) => {
+          const next = prev.map((p) =>
+            p.id === target.id
+              ? {
+                  ...p,
+                  meta: {
+                    ...(p.meta || {}),
+                    lastOpenedAt: new Date().toISOString(),
+                  },
+                }
+              : p
+          )
+          persistPipelines(next)
+          return next
+        })
+        addToast(`Loaded "${target.name}".`, 'success', 2600)
+      } catch (err) {
+        console.error(err)
+        addToast('Failed to load pipeline.', 'error')
+      } finally {
+        setLoadingPipeline(false)
+      }
+    }, 240)
+  }
+
+  const handleUploadPipeline = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+      fileInputRef.current.click()
+    }
+  }
+
+  const handlePipelineFileSelected = (event) => {
+    const file = event.target?.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const parsed = parseBoard(reader.result)
+        const imported = {
+          ...parsed,
+          id: `pl-${Date.now()}`,
+          name: parsed.name || file.name.replace(/\.board$/i, '') || 'Imported pipeline',
+          preview: parsed.preview || null,
+        }
+        const nextList = upsertPipeline(savedPipelines, imported)
+        setSavedPipelines(nextList)
+        addToast(`Imported "${imported.name}".`, 'success', 2800)
+        if (typeof window !== 'undefined') {
+          const openNow = window.confirm('Open the imported pipeline now?')
+          if (openNow) {
+            handleLoadPipeline(imported.id)
+          }
+        }
+      } catch (err) {
+        console.error(err)
+        addToast(err.message || 'Failed to import pipeline.', 'error')
+      } finally {
+        if (event.target) event.target.value = ''
+      }
+    }
+    reader.onerror = () => {
+      addToast('Unable to read the selected file.', 'error')
+      if (event.target) event.target.value = ''
+    }
+    reader.readAsText(file)
+  }
+
+  const handleLoadClick = () => {
+    if (!savedPipelines.length) {
+      addToast('No saved pipelines yet. Save one before loading.', 'info', 2600)
+      return
+    }
+    openPipelinesDock()
+  }
+
+  const handleLoadLatestPipeline = () => {
+    if (!savedPipelines.length) {
+      addToast('No saved pipelines yet. Save one before loading.', 'info', 2600)
+      return
+    }
+    handleLoadPipeline(savedPipelines[0].id)
+  }
+
+  const rootClassName = loadingPipeline ? 'pipeline-busy' : ''
+  const currentPipelineName = currentPipelineRecord?.name || 'Current pipeline'
 
   // Capture a high‑resolution preview from the MiniMap SVG as PNG
   const capturePipelinePreview = () => {
@@ -267,6 +525,7 @@ function App() {
     }
     const nextId = `n-${idSeq + 1}`
     setIdSeq((v) => v + 1)
+    setCurrentPipelineId(null)
 
     const base = {
       id: nextId,
@@ -373,7 +632,7 @@ function App() {
   }, [execResult])
 
   return (
-    <div id="dashboard-root" style={{ width: '100%', height: '100vh' }}>
+    <div id="dashboard-root" className={rootClassName} style={{ width: '100%', height: '100vh' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -468,7 +727,21 @@ function App() {
         <Background variant="dots" color={isDark ? '#475569' : '#cbd5e1'} gap={18} size={1} />
       </ReactFlow>
       {!compact && (
-        <LeftDock active={activeDock} onToggle={toggleDock} onAddNode={addNodeOf} disabled={executing} preview={pipelinePreview} />
+        <LeftDock
+          active={activeDock}
+          onToggle={toggleDock}
+          onAddNode={addNodeOf}
+          disabled={executing}
+          preview={pipelinePreview}
+          pipelines={savedPipelines}
+          currentPipelineId={currentPipelineId}
+          currentPipelineName={currentPipelineName}
+          onLoadPipeline={handleLoadPipeline}
+          onQuickLoad={handleLoadLatestPipeline}
+          onSavePipeline={handleSavePipeline}
+          onDownloadPipeline={handleDownloadPipeline}
+          onUploadPipeline={handleUploadPipeline}
+        />
       )}
       {paneMenu.open ? (
         <DashboardMenu
@@ -488,6 +761,10 @@ function App() {
           }}
           onToggleCompact={() => setCompact((v) => !v)}
           onClose={() => setPaneMenu({ open: false, x: 0, y: 0 })}
+          onSavePipeline={handleSavePipeline}
+          onLoadPipeline={handleLoadClick}
+          onDownloadPipeline={handleDownloadPipeline}
+          onUploadPipeline={handleUploadPipeline}
         />
       ) : null}
       {menu.open && menu.node ? (
@@ -505,6 +782,7 @@ function App() {
           }}
           onDelete={() => {
             const id = menu.node.id
+            setCurrentPipelineId(null)
             setNodes((nds) => nds.filter((n) => n.id !== id))
             setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id))
             setMenu({ open: false, x: 0, y: 0, node: null })
@@ -526,6 +804,13 @@ function App() {
           }}
         />
       ) : null}
+      <input
+        type="file"
+        accept=".board,application/json"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={handlePipelineFileSelected}
+      />
       <BottomBar
         nodesCount={nodes.length}
         isDark={isDark}
@@ -553,6 +838,10 @@ function App() {
         execResult={execResult}
         compact={compact}
         onScreenshot={downloadScreenshot}
+        onSavePipeline={handleSavePipeline}
+        onLoadPipeline={handleLoadClick}
+        onDownloadPipeline={handleDownloadPipeline}
+        onUploadPipeline={handleUploadPipeline}
         onRun={async () => {
           if (executing) return
           setExecResult(null)
@@ -625,8 +914,20 @@ function App() {
         title="Clear dashboard?"
         message="This will remove all nodes and edges. This action cannot be undone."
         onCancel={() => setConfirmClear(false)}
-        onConfirm={() => { setConfirmClear(false); setPaneMenu({ open: false, x: 0, y: 0 }); setNodes([]); setEdges([]) }}
+        onConfirm={() => {
+          setConfirmClear(false)
+          setPaneMenu({ open: false, x: 0, y: 0 })
+          setCurrentPipelineId(null)
+          setNodes([])
+          setEdges([])
+        }}
       />
+      {loadingPipeline ? (
+        <div className="loading-overlay">
+          <div className="loading-spinner" />
+          <div className="loading-text">Switching pipeline...</div>
+        </div>
+      ) : null}
     </div>
   )
 }
