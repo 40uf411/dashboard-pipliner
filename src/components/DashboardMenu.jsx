@@ -1,3 +1,9 @@
+import { IoSave, IoOpen } from 'react-icons/io5'
+import { RiDownloadCloud2Fill, RiUploadCloud2Fill, RiResetLeftLine } from 'react-icons/ri'
+import { IoMdAddCircleOutline } from 'react-icons/io'
+import { LuLayoutDashboard } from 'react-icons/lu'
+import { MdOutlineViewTimeline, MdDisplaySettings } from 'react-icons/md'
+
 export default function DashboardMenu({
   x,
   y,
@@ -10,7 +16,68 @@ export default function DashboardMenu({
   onLoadPipeline,
   onDownloadPipeline,
   onUploadPipeline,
+  onOpenSettings,
 }) {
+  const entries = [
+    {
+      key: 'save',
+      label: 'Save pipeline',
+      icon: <IoSave size={16} />,
+      action: onSavePipeline,
+    },
+    {
+      key: 'load',
+      label: 'Load pipeline',
+      icon: <IoOpen size={16} />,
+      action: onLoadPipeline,
+    },
+    {
+      key: 'download',
+      label: 'Download pipeline',
+      icon: <RiDownloadCloud2Fill size={16} />,
+      action: onDownloadPipeline,
+    },
+    {
+      key: 'upload',
+      label: 'Upload pipeline',
+      icon: <RiUploadCloud2Fill size={16} />,
+      action: onUploadPipeline,
+    },
+    { key: 'sep-1', separator: true },
+    {
+      key: 'add',
+      label: 'Add node',
+      icon: <IoMdAddCircleOutline size={17} />,
+      action: onAddNode,
+    },
+    {
+      key: 'reset',
+      label: 'Reset nodes',
+      icon: <RiResetLeftLine size={16} />,
+      action: onResetNodes,
+    },
+    {
+      key: 'clear',
+      label: 'Clear dashboard',
+      icon: <LuLayoutDashboard size={16} />,
+      action: onClear,
+      danger: true,
+    },
+    {
+      key: 'zen',
+      label: 'Toggle zen mode',
+      icon: <MdOutlineViewTimeline size={16} />,
+      action: onToggleCompact,
+    },
+    { key: 'sep-2', separator: true },
+    {
+      key: 'settings',
+      label: 'Settings',
+      icon: <MdDisplaySettings size={17} />,
+      action: onOpenSettings,
+    },
+  ]
+
   return (
     <div
       className="context-menu"
@@ -18,79 +85,31 @@ export default function DashboardMenu({
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div
-        className="context-item"
-        role="button"
-        tabIndex={0}
-        onClick={() => { onSavePipeline && onSavePipeline(); onClose(); }}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onSavePipeline && onSavePipeline(), onClose())}
-      >
-        Save pipeline
-      </div>
-      <div
-        className="context-item"
-        role="button"
-        tabIndex={0}
-        onClick={() => { onLoadPipeline && onLoadPipeline(); onClose(); }}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onLoadPipeline && onLoadPipeline(), onClose())}
-      >
-        Load pipeline
-      </div>
-      <div
-        className="context-item"
-        role="button"
-        tabIndex={0}
-        onClick={() => { onDownloadPipeline && onDownloadPipeline(); onClose(); }}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onDownloadPipeline && onDownloadPipeline(), onClose())}
-      >
-        Download pipeline
-      </div>
-      <div
-        className="context-item"
-        role="button"
-        tabIndex={0}
-        onClick={() => { onUploadPipeline && onUploadPipeline(); onClose(); }}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onUploadPipeline && onUploadPipeline(), onClose())}
-      >
-        Upload pipeline
-      </div>
-      <div className="context-sep" />
-      <div
-        className="context-item"
-        role="button"
-        tabIndex={0}
-        onClick={() => { onAddNode(); onClose(); }}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onAddNode(), onClose())}
-      >
-        Add node
-      </div>
-      <div
-        className="context-item"
-        role="button"
-        tabIndex={0}
-        onClick={() => { onResetNodes(); onClose(); }}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onResetNodes(), onClose())}
-      >
-        Reset nodes
-      </div>
-      <div
-        className="context-item danger"
-        role="button"
-        tabIndex={0}
-        onClick={() => { onClear(); onClose(); }}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onClear(), onClose())}
-      >
-        Clear dashboard
-      </div>
-      <div
-        className="context-item"
-        role="button"
-        tabIndex={0}
-        onClick={() => { onToggleCompact(); onClose(); }}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (onToggleCompact(), onClose())}
-      >
-        Toggle compact mode
-      </div>
+      {entries.map((entry) =>
+        entry.separator ? (
+          <div key={entry.key} className="context-sep" />
+        ) : (
+          <div
+            key={entry.key}
+            className={`context-item${entry.danger ? ' danger' : ''}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (entry.action) entry.action()
+              onClose()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                if (entry.action) entry.action()
+                onClose()
+              }
+            }}
+          >
+            <span className="context-icon">{entry.icon}</span>
+            <span>{entry.label}</span>
+          </div>
+        )
+      )}
     </div>
   )
 }

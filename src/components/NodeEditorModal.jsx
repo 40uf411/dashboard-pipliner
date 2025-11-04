@@ -347,22 +347,25 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3 className="modal-title">Edit Node</h3>
-          <div
-            className="btn-icon"
-            role="button"
-            tabIndex={0}
-            onClick={onClose}
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClose()}
-            aria-label="Close"
-          >
-            <IoClose size={18} />
+      <div className="modal-shell" onClick={(e) => e.stopPropagation()}>
+        <div className="glass-card modal-card">
+          <div className="glass-header">
+            <div>
+              <p className="glass-eyebrow">{template?.subtitle || 'Node'}</p>
+              <h3 className="glass-title">Edit Node</h3>
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={onClose}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClose()}
+              aria-label="Close editor"
+            >
+              <IoClose size={18} />
+            </button>
           </div>
-        </div>
 
-        <div className="modal-body">
+          <div className="glass-body modal-scroll">
           <label className="field">
             <span className="field-label">Title</span>
             <input
@@ -435,28 +438,27 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
               </div>
             </div>
           )}
-        </div>
-
-        <div className="modal-footer">
-          <div
-            className="btn-ghost"
-            role="button"
-            tabIndex={0}
-            onClick={onClose}
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClose()}
-          >
-            Cancel
           </div>
-          <div
-            className="btn-primary"
-            role="button"
-            tabIndex={0}
-            onClick={handleSave}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') handleSave()
-            }}
-          >
-            Save
+
+          <div className="glass-footer">
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={onClose}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClose()}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn-primary"
+              type="button"
+              onClick={handleSave}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') handleSave()
+              }}
+            >
+              Save changes
+            </button>
           </div>
         </div>
       </div>

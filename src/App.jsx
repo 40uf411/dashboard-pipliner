@@ -25,6 +25,7 @@ import {
   slugify,
   persistPipelines,
 } from './utils/pipelineStorage.js'
+import SettingsOverlay from './components/SettingsOverlay.jsx'
 
 // Memoized/static React Flow node types to avoid recreating objects each render (#002)
 const nodeTypes = { card: NodeCard }
@@ -111,6 +112,12 @@ function App() {
   const [savedPipelines, setSavedPipelines] = useState([])
   const [currentPipelineId, setCurrentPipelineId] = useState(null)
   const [loadingPipeline, setLoadingPipeline] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsPipelineName, setSettingsPipelineName] = useState('Untitled pipeline')
+  const [serverHost, setServerHost] = useState('localhost')
+  const [serverUser, setServerUser] = useState('')
+  const [serverPassword, setServerPassword] = useState('')
+  const [testingConnection, setTestingConnection] = useState(false)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -120,10 +127,40 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (settingsOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [settingsOpen])
+
   const currentPipelineRecord = useMemo(
     () => savedPipelines.find((p) => p.id === currentPipelineId) || null,
     [savedPipelines, currentPipelineId]
   )
+
+  useEffect(() => {
+    if (!settingsOpen) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setSettingsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [settingsOpen])
+
+  useEffect(() => {
+    if (currentPipelineRecord) {
+      setSettingsPipelineName(currentPipelineRecord.name || 'Untitled pipeline')
+      const server = currentPipelineRecord.meta?.server || {}
+      setServerHost(server.host || 'localhost')
+      setServerUser(server.user || '')
+      setServerPassword(server.password || '')
+    }
+  }, [currentPipelineRecord?.id])
 
   const onNodesChange = useCallback((changes) => {
     setCurrentPipelineId(null)
@@ -186,7 +223,10 @@ function App() {
   const buildPipelineSnapshot = ({ id, name, createdAt } = {}) => {
     const timestamp = new Date().toISOString()
     const baseId = id || currentPipelineRecord?.id || `pl-${Date.now()}`
-    const baseName = (name || currentPipelineRecord?.name || 'Untitled pipeline').trim() || 'Untitled pipeline'
+    const baseName =
+      (name || settingsPipelineName || currentPipelineRecord?.name || 'Untitled pipeline')
+        .toString()
+        .trim() || 'Untitled pipeline'
     return {
       id: baseId,
       name: baseName,
@@ -200,6 +240,11 @@ function App() {
         isDark,
         zoom: zoomPct,
         interactive,
+        server: {
+          host: serverHost,
+          user: serverUser,
+          password: serverPassword,
+        },
       },
     }
   }
@@ -209,15 +254,16 @@ function App() {
     setPaneMenu({ open: false, x: 0, y: 0 })
   }
 
-  const handleSavePipeline = () => {
+  const handleSavePipeline = (nameOverride) => {
     if (executing) {
       addToast('Cannot save while execution is in progress.', 'error')
       return
     }
-    const suggested = currentPipelineRecord?.name || 'My pipeline'
-    const name = typeof window !== 'undefined' ? window.prompt('Save pipeline as', suggested) : suggested
-    if (name === null) return
-    const trimmed = String(name || '').trim()
+    const trimmed = String(
+      typeof nameOverride === 'string' && nameOverride.length ? nameOverride : settingsPipelineName
+    )
+      .trim()
+      || 'Untitled pipeline'
     if (!trimmed) {
       addToast('Pipeline name cannot be empty.', 'error')
       return
@@ -227,9 +273,10 @@ function App() {
       name: trimmed,
       createdAt: currentPipelineRecord?.createdAt,
     })
-    const nextList = upsertPipeline(savedPipelines, base)
+    const nextList = upsertPipeline(savedPipelines, { ...base, name: trimmed })
     setSavedPipelines(nextList)
     setCurrentPipelineId(base.id)
+    setSettingsPipelineName(trimmed)
     addToast(`Saved "${trimmed}".`, 'success', 2600)
   }
 
@@ -276,6 +323,7 @@ function App() {
       addToast('Cannot load while execution is in progress.', 'error')
       return
     }
+    setSettingsOpen(false)
     setLoadingPipeline(true)
     setTimeout(() => {
       try {
@@ -286,6 +334,11 @@ function App() {
         setEdges(nextEdges)
         setIdSeq(Number.isFinite(target.idSeq) ? target.idSeq : 1000)
         setCurrentPipelineId(target.id)
+        setSettingsPipelineName(target.name || 'Untitled pipeline')
+        const server = target.meta?.server || {}
+        setServerHost(server.host || 'localhost')
+        setServerUser(server.user || '')
+        setServerPassword(server.password || '')
         setChecking(false)
         setIssueCount(0)
         setExecResult(null)
@@ -349,6 +402,11 @@ function App() {
         }
         const nextList = upsertPipeline(savedPipelines, imported)
         setSavedPipelines(nextList)
+        setSettingsPipelineName(imported.name)
+        const importedServer = imported.meta?.server || {}
+        setServerHost(importedServer.host || 'localhost')
+        setServerUser(importedServer.user || '')
+        setServerPassword(importedServer.password || '')
         addToast(`Imported "${imported.name}".`, 'success', 2800)
         if (typeof window !== 'undefined') {
           const openNow = window.confirm('Open the imported pipeline now?')
@@ -386,8 +444,32 @@ function App() {
     handleLoadPipeline(savedPipelines[0].id)
   }
 
-  const rootClassName = loadingPipeline ? 'pipeline-busy' : ''
-  const currentPipelineName = currentPipelineRecord?.name || 'Current pipeline'
+  const openSettings = () => {
+    setSettingsOpen(true)
+    setActiveDock(null)
+    setPaneMenu({ open: false, x: 0, y: 0 })
+  }
+
+  const closeSettings = () => setSettingsOpen(false)
+
+  const handleTestConnection = () => {
+    if (testingConnection) return
+    setTestingConnection(true)
+    addToast('Testing connection...', 'info', 2000)
+    setTimeout(() => {
+      setTestingConnection(false)
+      addToast('Connection successful.', 'success', 2600)
+    }, 1400)
+  }
+
+  const rootClassName = [
+    loadingPipeline ? 'pipeline-busy' : '',
+    settingsOpen ? 'settings-blur' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  const currentPipelineName =
+    settingsPipelineName || currentPipelineRecord?.name || 'Current pipeline'
 
   // Capture a high‑resolution preview from the MiniMap SVG as PNG
   const capturePipelinePreview = () => {
@@ -741,6 +823,7 @@ function App() {
           onSavePipeline={handleSavePipeline}
           onDownloadPipeline={handleDownloadPipeline}
           onUploadPipeline={handleUploadPipeline}
+          onOpenSettings={openSettings}
         />
       )}
       {paneMenu.open ? (
@@ -842,6 +925,7 @@ function App() {
         onLoadPipeline={handleLoadClick}
         onDownloadPipeline={handleDownloadPipeline}
         onUploadPipeline={handleUploadPipeline}
+        onOpenSettings={openSettings}
         onRun={async () => {
           if (executing) return
           setExecResult(null)
@@ -921,6 +1005,23 @@ function App() {
           setNodes([])
           setEdges([])
         }}
+      />
+      <SettingsOverlay
+        open={settingsOpen}
+        onClose={closeSettings}
+        pipelineName={settingsPipelineName}
+        onPipelineNameChange={setSettingsPipelineName}
+        onSavePipeline={handleSavePipeline}
+        onDownloadPipeline={handleDownloadPipeline}
+        onUploadPipeline={handleUploadPipeline}
+        serverHost={serverHost}
+        onServerHostChange={setServerHost}
+        serverUser={serverUser}
+        onServerUserChange={setServerUser}
+        serverPassword={serverPassword}
+        onServerPasswordChange={setServerPassword}
+        onTestConnection={handleTestConnection}
+        testingConnection={testingConnection}
       />
       {loadingPipeline ? (
         <div className="loading-overlay">

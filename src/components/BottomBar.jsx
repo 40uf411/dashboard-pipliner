@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FiGitBranch } from 'react-icons/fi'
-import { MdDarkMode } from 'react-icons/md'
+import { MdDarkMode, MdDisplaySettings } from 'react-icons/md'
 import { IoSunnyOutline, IoLockOpenOutline, IoLockClosed, IoSave, IoOpen } from 'react-icons/io5'
 import { PiWarningBold } from 'react-icons/pi'
 import { LuMinimize2, LuMaximize2 } from 'react-icons/lu'
@@ -33,10 +33,11 @@ function BottomBar({
   onLoadPipeline,
   onDownloadPipeline,
   onUploadPipeline,
+  onOpenSettings,
 }) {
   // keep slider value within bounds
   const clampedZoom = useMemo(() => Math.min(150, Math.max(50, Math.round(zoom))), [zoom])
-  const [showLabels, setShowLabels] = useState(true)
+  const [showLabels, setShowLabels] = useState(false)
   const [elapsedMs, setElapsedMs] = useState(0)
   const timerStartRef = useRef(null)
   const tickRef = useRef(null)
@@ -247,6 +248,20 @@ function BottomBar({
           {isDark ? <IoSunnyOutline size={18} /> : <MdDarkMode size={18} />}
         </div>
         <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>{isDark ? 'Dark' : 'Light'}</span>
+      </div>
+
+      <div className="bar-item" title="Settings">
+        <div
+          className="bar-btn"
+          role="button"
+          tabIndex={0}
+          onClick={() => onOpenSettings && onOpenSettings()}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onOpenSettings && onOpenSettings()}
+          aria-label="Open settings"
+        >
+          <MdDisplaySettings size={18} />
+        </div>
+        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Settings</span>
       </div>
 
       <div className="bar-item" title="Save pipeline">

@@ -1,7 +1,9 @@
 import { useState, memo } from 'react'
-import { TbGitBranch, TbHierarchy2, TbDownload } from 'react-icons/tb'
+import { TbGitBranch, TbHierarchy2, TbDownload} from 'react-icons/tb'
+import { FiGitBranch } from 'react-icons/fi'
 import { IoSave, IoOpen } from 'react-icons/io5'
 import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
+import { MdDisplaySettings } from 'react-icons/md'
 import reactLogo from '../assets/react.svg'
 import NodePreview from './NodePreview.jsx'
 import { NODE_SECTIONS, NODE_TEMPLATES } from '../nodes/nodeDefinitions.js'
@@ -87,6 +89,7 @@ function LeftDock({
   onSavePipeline,
   onDownloadPipeline,
   onUploadPipeline,
+  onOpenSettings,
 }) {
   return (
     <>
@@ -100,7 +103,7 @@ function LeftDock({
           title="Pipelines"
           aria-label="Pipelines"
         >
-          <TbGitBranch size={18} />
+          <TbHierarchy2 size={18} />
         </div>
         <div
           className={`left-nav-btn ${active === 'nodes' ? 'active' : ''}`}
@@ -111,7 +114,7 @@ function LeftDock({
           title="Nodes"
           aria-label="Nodes"
         >
-          <TbHierarchy2 size={18} />
+          <FiGitBranch size={18} />
         </div>
         <div
           className={`left-nav-btn ${active === 'outputs' ? 'active' : ''}`}
@@ -141,6 +144,7 @@ function LeftDock({
             onSavePipeline={onSavePipeline}
             onDownloadPipeline={onDownloadPipeline}
             onUploadPipeline={onUploadPipeline}
+            onOpenSettings={onOpenSettings}
           />
         ) : (
           <EmptyPanel title="Outputs" />
@@ -163,6 +167,7 @@ function PipelinesPanel({
   onSavePipeline,
   onDownloadPipeline,
   onUploadPipeline,
+  onOpenSettings,
 }) {
   const [pulse, setPulse] = useState(null)
 
@@ -242,6 +247,18 @@ function PipelinesPanel({
           >
             <RiUploadCloud2Fill size={18} />
             <span>Upload</span>
+          </div>
+          <div
+            className="pipeline-action"
+            role="button"
+            tabIndex={0}
+            onClick={() => onOpenSettings && onOpenSettings()}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onOpenSettings && onOpenSettings()}
+            title="Open workspace settings"
+            aria-label="Open settings"
+          >
+            <MdDisplaySettings size={18} />
+            <span>Settings</span>
           </div>
         </div>
 
