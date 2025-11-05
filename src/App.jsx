@@ -868,10 +868,11 @@ function App() {
     const t = setTimeout(() => setExecResult(null), 5000)
     return () => clearTimeout(t)
   }, [execResult])
-
+  const proOptions = { hideAttribution: true };
   return (
     <div id="dashboard-root" className={rootClassName} style={{ width: '100%', height: '100vh' }}>
       <ReactFlow
+        proOptions={proOptions}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
