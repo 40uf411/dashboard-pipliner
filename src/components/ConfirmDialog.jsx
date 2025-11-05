@@ -1,4 +1,6 @@
 import { IoClose } from 'react-icons/io5'
+import { GiCancel } from 'react-icons/gi'
+import { BiSave } from 'react-icons/bi'
 
 export default function ConfirmDialog({
   open,
@@ -37,6 +39,7 @@ export default function ConfirmDialog({
               onClick={onCancel}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onCancel()}
             >
+              <GiCancel size={16} />
               Cancel
             </button>
             <button
@@ -45,6 +48,7 @@ export default function ConfirmDialog({
               onClick={onConfirm}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onConfirm()}
             >
+              <BiSave size={16} />
               Confirm
             </button>
           </div>

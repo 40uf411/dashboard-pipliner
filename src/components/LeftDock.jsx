@@ -1,9 +1,10 @@
-import { useState, memo } from 'react'
-import { TbGitBranch, TbHierarchy2, TbDownload} from 'react-icons/tb'
-import { FiGitBranch } from 'react-icons/fi'
+import { useEffect, useRef, useState, memo } from 'react'
+import { TbGitBranch, TbHierarchy2, TbDownload } from 'react-icons/tb'
+import { FiGitBranch, FiEdit3 } from 'react-icons/fi'
 import { IoSave, IoOpen } from 'react-icons/io5'
 import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
-import { MdDisplaySettings } from 'react-icons/md'
+import { MdDisplaySettings, MdDeleteOutline } from 'react-icons/md'
+import { LuLayoutDashboard } from 'react-icons/lu'
 import reactLogo from '../assets/react.svg'
 import NodePreview from './NodePreview.jsx'
 import { NODE_SECTIONS, NODE_TEMPLATES } from '../nodes/nodeDefinitions.js'
@@ -90,6 +91,9 @@ function LeftDock({
   onDownloadPipeline,
   onUploadPipeline,
   onOpenSettings,
+  onClearDashboard,
+  onDeletePipeline,
+  onRenamePipeline,
 }) {
   return (
     <>
@@ -142,10 +146,13 @@ function LeftDock({
             onLoadPipeline={onLoadPipeline}
             onQuickLoad={onQuickLoad}
             onSavePipeline={onSavePipeline}
-            onDownloadPipeline={onDownloadPipeline}
-            onUploadPipeline={onUploadPipeline}
-            onOpenSettings={onOpenSettings}
-          />
+          onDownloadPipeline={onDownloadPipeline}
+          onUploadPipeline={onUploadPipeline}
+          onOpenSettings={onOpenSettings}
+          onClearDashboard={onClearDashboard}
+          onDeletePipeline={onDeletePipeline}
+          onRenamePipeline={onRenamePipeline}
+        />
         ) : (
           <EmptyPanel title="Outputs" />
         )
@@ -168,8 +175,21 @@ function PipelinesPanel({
   onDownloadPipeline,
   onUploadPipeline,
   onOpenSettings,
+  onClearDashboard,
+  onDeletePipeline,
+  onRenamePipeline,
 }) {
   const [pulse, setPulse] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [draftName, setDraftName] = useState('')
+  const editingInputRef = useRef(null)
+
+  useEffect(() => {
+    if (editingId && editingInputRef.current) {
+      editingInputRef.current.focus()
+      editingInputRef.current.select()
+    }
+  }, [editingId])
 
   const currentPipeline = pipelines.find((p) => p.id === currentPipelineId) || null
   const currentImage = preview || currentPipeline?.preview || reactLogo
@@ -191,11 +211,75 @@ function PipelinesPanel({
     }, 320)
   }
 
+  const startEditing = (pipeline) => {
+    if (!pipeline) return
+    setEditingId(pipeline.id)
+    setDraftName(pipeline.name || '')
+  }
+
+  const cancelEditing = () => {
+    setEditingId(null)
+    setDraftName('')
+  }
+
+  const commitEditing = () => {
+    if (!editingId) return
+    const original = pipelines.find((pipe) => pipe.id === editingId)
+    if (!original) {
+      cancelEditing()
+      return
+    }
+    const trimmed = String(draftName ?? '').trim()
+    if (trimmed === String(original.name || '').trim()) {
+      cancelEditing()
+      return
+    }
+    onRenamePipeline && onRenamePipeline(editingId, draftName)
+    cancelEditing()
+  }
+
+  const handleEditKey = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      commitEditing()
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelEditing()
+    }
+  }
+
+  useEffect(() => {
+    if (editingId && !pipelines.some((p) => p.id === editingId)) {
+      setEditingId(null)
+      setDraftName('')
+    }
+  }, [editingId, pipelines])
+
   return (
     <div className="left-panel" onMouseDown={(e) => e.stopPropagation()}>
       <div className="panel-header">Pipelines</div>
       <div className="panel-body">
         <div className="pipeline-actions">
+          <div
+            className="pipeline-action danger"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              onClearDashboard && onClearDashboard()
+              onClose && onClose()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                onClearDashboard && onClearDashboard()
+                onClose && onClose()
+              }
+            }}
+            title="Clear all nodes and edges from the dashboard"
+            aria-label="Clear dashboard"
+          >
+            <LuLayoutDashboard size={18} />
+            <span>Clear</span>
+          </div>
           <div
             className="pipeline-action"
             role="button"
@@ -289,25 +373,83 @@ function PipelinesPanel({
 
         {otherPipelines.length ? (
           <div className="pipelines-grid">
-            {otherPipelines.map((p) => (
-              <div
-                key={p.id}
-                className={`pipeline-card${pulse === p.id ? ' pulse-gold' : ''}`}
-                style={{ backgroundImage: `url(${p.preview || reactLogo})` }}
-                role="button"
-                tabIndex={0}
-                onClick={() => handleLoad(p.id)}
-                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleLoad(p.id)}
-              >
-                <div className="bottom-blur">
-                  <div className="caption">{p.name}</div>
+            {otherPipelines.map((p) => {
+              const displayName = p.name || 'Untitled pipeline'
+              const isEditing = editingId === p.id
+
+              return (
+                <div
+                  key={p.id}
+                  className={`pipeline-card${pulse === p.id ? ' pulse-gold' : ''}${isEditing ? ' editing' : ''}`}
+                  style={{ backgroundImage: `url(${p.preview || reactLogo})` }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    if (isEditing) return
+                    handleLoad(p.id)
+                  }}
+                  onKeyDown={(e) => {
+                    if (isEditing) return
+                    if (e.key === 'Enter' || e.key === ' ') handleLoad(p.id)
+                  }}
+                >
+                  <div className="bottom-blur">
+                    <div className="caption">
+                      {isEditing ? (
+                        <input
+                          ref={isEditing ? editingInputRef : null}
+                          className="pipeline-edit-input"
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={handleEditKey}
+                          onBlur={commitEditing}
+                          aria-label="Edit pipeline name"
+                        />
+                      ) : (
+                        displayName
+                      )}
+                    </div>
+                  </div>
+                  <div className="hover-overlay">
+                    <div className="pipeline-hover-actions">
+                      <button
+                        type="button"
+                        className="pipeline-round-btn danger"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDeletePipeline && onDeletePipeline(p.id)
+                        }}
+                        aria-label={`Delete ${displayName}`}
+                      >
+                        <MdDeleteOutline size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="pipeline-round-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (isEditing) {
+                            commitEditing()
+                          } else {
+                            startEditing(p)
+                          }
+                        }}
+                        aria-label={`Edit ${displayName}`}
+                      >
+                        <FiEdit3 size={16} />
+                      </button>
+                    </div>
+                    {!isEditing ? (
+                      <div className="hover-center">
+                        <IoOpen size={26} />
+                        <div className="hover-text">Load pipeline</div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="hover-overlay">
-                  <IoOpen size={26} />
-                  <div className="hover-text">Load pipeline</div>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div className="muted-text" style={{ padding: '14px 0 6px' }}>

@@ -1,7 +1,10 @@
-import { IoClose } from 'react-icons/io5'
-import { IoSave } from 'react-icons/io5'
+import { IoClose, IoSave } from 'react-icons/io5'
 import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
 import { MdDisplaySettings } from 'react-icons/md'
+import { LuLayoutDashboard } from 'react-icons/lu'
+import { CgDebug } from 'react-icons/cg'
+import { GrConnect } from 'react-icons/gr'
+import { TbPlugConnectedX } from 'react-icons/tb'
 
 const HOTKEYS = [
   { combo: 'Ctrl / Cmd + S', description: 'Save the current pipeline' },
@@ -19,6 +22,7 @@ export default function SettingsOverlay({
   onSavePipeline,
   onDownloadPipeline,
   onUploadPipeline,
+  onClearDashboard,
   serverHost,
   onServerHostChange,
   serverUser,
@@ -27,6 +31,9 @@ export default function SettingsOverlay({
   onServerPasswordChange,
   onTestConnection,
   testingConnection = false,
+  onConnectToggle,
+  connecting = false,
+  connected = false,
 }) {
   if (!open) return null
 
@@ -66,7 +73,7 @@ export default function SettingsOverlay({
               target="_blank"
               rel="noreferrer"
             >
-              Read the documentation ↗
+              Read the documentation {'>'}
             </a>
           </section>
 
@@ -81,105 +88,138 @@ export default function SettingsOverlay({
               </div>
 
               <div className="glass-body settings-body">
-                <label className="field">
-                  <span className="field-label">Pipeline name</span>
-                  <input
-                    className="field-input"
-                    value={pipelineName}
-                    onChange={(e) => onPipelineNameChange && onPipelineNameChange(e.target.value)}
-                    placeholder="Untitled pipeline"
-                  />
-                </label>
-
-                <div className="settings-actions">
-                  <button
-                    className="btn-primary"
-                    type="button"
-                    onClick={() => onSavePipeline && onSavePipeline(pipelineName)}
-                  >
-                    <IoSave size={16} />
-                    Save pipeline
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    type="button"
-                    onClick={() => onDownloadPipeline && onDownloadPipeline()}
-                  >
-                    <RiDownloadCloud2Fill size={16} />
-                    Download
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    type="button"
-                    onClick={() => onUploadPipeline && onUploadPipeline()}
-                  >
-                    <RiUploadCloud2Fill size={16} />
-                    Upload
-                  </button>
-                </div>
-
-                <div className="settings-divider" />
-
-                <div className="settings-subsection">
-                  <h4>Remote pipeline server</h4>
-                  <p className="muted-text">
-                    Configure your deployment endpoint to validate connectivity before executing
-                    remote jobs.
-                  </p>
-                  <div className="settings-grid">
+                <div className="workspace-sections">
+                  <div className="workspace-section">
+                    <h4 className="workspace-section-title">Pipeline settings</h4>
+                    <p className="muted-text" style={{ margin: 0 }}>
+                      Manage the active pipeline name and keep quick actions at hand.
+                    </p>
                     <label className="field">
-                      <span className="field-label">Hostname</span>
+                      <span className="field-label">Pipeline name</span>
                       <input
                         className="field-input"
-                        value={serverHost}
-                        onChange={(e) => onServerHostChange && onServerHostChange(e.target.value)}
-                        placeholder="e.g. pipelines.internal"
+                        value={pipelineName}
+                        onChange={(e) => onPipelineNameChange && onPipelineNameChange(e.target.value)}
+                        placeholder="Untitled pipeline"
                       />
                     </label>
-                    <label className="field">
-                      <span className="field-label">Username</span>
-                      <input
-                        className="field-input"
-                        value={serverUser}
-                        onChange={(e) => onServerUserChange && onServerUserChange(e.target.value)}
-                        placeholder="deploy"
-                      />
-                    </label>
-                    <label className="field">
-                      <span className="field-label">Password</span>
-                      <input
-                        className="field-input"
-                        type="password"
-                        value={serverPassword}
-                        onChange={(e) =>
-                          onServerPasswordChange && onServerPasswordChange(e.target.value)
-                        }
-                        placeholder="••••••••"
-                      />
-                    </label>
+
+                    <div className="settings-actions">
+                      <button
+                        className="btn-primary"
+                        type="button"
+                        onClick={() => onSavePipeline && onSavePipeline(pipelineName)}
+                      >
+                        <IoSave size={16} />
+                        Save
+                      </button>
+                      <button
+                        className="btn-danger"
+                        type="button"
+                        onClick={() => {
+                          onClearDashboard && onClearDashboard()
+                          onClose && onClose()
+                        }}
+                      >
+                        <LuLayoutDashboard size={16} />
+                        Clear
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={() => onDownloadPipeline && onDownloadPipeline()}
+                      >
+                        <RiDownloadCloud2Fill size={16} />
+                        Download
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={() => onUploadPipeline && onUploadPipeline()}
+                      >
+                        <RiUploadCloud2Fill size={16} />
+                        Upload
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    className="btn-primary subtle"
-                    type="button"
-                    onClick={() => onTestConnection && onTestConnection()}
-                    disabled={testingConnection}
-                  >
-                    {testingConnection ? 'Testing connection…' : 'Test connection'}
-                  </button>
-                </div>
-              </div>
 
-              <div className="glass-footer">
-                <button className="btn-secondary" type="button" onClick={onClose}>
-                  Close
-                </button>
-                <button
-                  className="btn-primary"
-                  type="button"
-                  onClick={() => onSavePipeline && onSavePipeline(pipelineName)}
-                >
-                  Save changes
-                </button>
+                  <div className="workspace-section">
+                    <h4 className="workspace-section-title">Server settings</h4>
+                    <p className="muted-text" style={{ margin: 0 }}>
+                      Configure your deployment endpoint and keep the connection status in sync.
+                    </p>
+                    <div className="settings-grid">
+                      <label className="field">
+                        <span className="field-label">Hostname</span>
+                        <input
+                          className="field-input"
+                          value={serverHost}
+                          onChange={(e) => onServerHostChange && onServerHostChange(e.target.value)}
+                          placeholder="e.g. pipelines.internal"
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="field-label">Username</span>
+                        <input
+                          className="field-input"
+                          value={serverUser}
+                          onChange={(e) => onServerUserChange && onServerUserChange(e.target.value)}
+                          placeholder="deploy"
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="field-label">Password</span>
+                        <input
+                          className="field-input"
+                          type="password"
+                          value={serverPassword}
+                          onChange={(e) =>
+                            onServerPasswordChange && onServerPasswordChange(e.target.value)
+                          }
+                          placeholder="********"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="server-actions">
+                      <button
+                        className="btn-primary subtle"
+                        type="button"
+                        onClick={() => onTestConnection && onTestConnection()}
+                        disabled={testingConnection}
+                      >
+                        {testingConnection ? (
+                          'Testing connection...'
+                        ) : (
+                          <>
+                            <CgDebug size={18} />
+                            Test connection
+                          </>
+                        )}
+                      </button>
+                      <button
+                        className={`btn-connect${connected ? ' connected' : ''}`}
+                        type="button"
+                        onClick={() => onConnectToggle && onConnectToggle()}
+                        disabled={connecting}
+                      >
+                        {connecting ? (
+                          'Connecting...'
+                        ) : connected ? (
+                          <>
+                            <TbPlugConnectedX size={18} />
+                            Disconnect
+                          </>
+                        ) : (
+                          <>
+                            <GrConnect size={18} />
+                            Connect
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>

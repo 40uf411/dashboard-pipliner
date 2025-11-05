@@ -24,11 +24,14 @@ import {
   parseBoard,
   slugify,
   persistPipelines,
+  deletePipeline,
 } from './utils/pipelineStorage.js'
 import SettingsOverlay from './components/SettingsOverlay.jsx'
 
 // Memoized/static React Flow node types to avoid recreating objects each render (#002)
 const nodeTypes = { card: NodeCard }
+
+const SERVER_SETTINGS_KEY = 'visual-pipeline-dashboard:server-settings'
 
 const makeNode = (id, templateKey, position, overrides = {}) => ({
   id,
@@ -118,7 +121,32 @@ function App() {
   const [serverUser, setServerUser] = useState('')
   const [serverPassword, setServerPassword] = useState('')
   const [testingConnection, setTestingConnection] = useState(false)
+  const [serverConnected, setServerConnected] = useState(false)
+  const [connectingServer, setConnectingServer] = useState(false)
   const fileInputRef = useRef(null)
+  const serverSettingsInitialisedRef = useRef(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      serverSettingsInitialisedRef.current = true
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(SERVER_SETTINGS_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object') {
+          if (typeof parsed.host === 'string') setServerHost(parsed.host)
+          if (typeof parsed.user === 'string') setServerUser(parsed.user)
+          if (typeof parsed.password === 'string') setServerPassword(parsed.password)
+          if (typeof parsed.connected === 'boolean') setServerConnected(parsed.connected)
+        }
+      }
+    } catch {
+    } finally {
+      serverSettingsInitialisedRef.current = true
+    }
+  }, [])
 
   useEffect(() => {
     const stored = readPipelines()
@@ -159,6 +187,8 @@ function App() {
       setServerHost(server.host || 'localhost')
       setServerUser(server.user || '')
       setServerPassword(server.password || '')
+      setServerConnected(Boolean(server.connected))
+      setConnectingServer(false)
     }
   }, [currentPipelineRecord?.id])
 
@@ -176,6 +206,71 @@ function App() {
     const id = Date.now() + Math.random()
     setToasts((t) => [...t, { id, message, type, duration }])
   }, [])
+
+  const persistServerMeta = useCallback(
+    (patch) => {
+      if (!currentPipelineId) return
+      setSavedPipelines((prev) => {
+        const idx = prev.findIndex((p) => p.id === currentPipelineId)
+        if (idx < 0) return prev
+        const target = prev[idx]
+        const currentServer = target.meta?.server || {}
+        const nextServer = { ...currentServer, ...patch }
+        if (
+          currentServer.host === nextServer.host &&
+          currentServer.user === nextServer.user &&
+          currentServer.password === nextServer.password &&
+          currentServer.connected === nextServer.connected
+        ) {
+          return prev
+        }
+        const updated = [...prev]
+        updated[idx] = {
+          ...target,
+          meta: {
+            ...(target.meta || {}),
+            server: nextServer,
+          },
+        }
+        persistPipelines(updated)
+        return updated
+      })
+    },
+    [currentPipelineId]
+  )
+
+  const requestClearDashboard = useCallback(() => {
+    if (executing) {
+      addToast('Cannot clear while executing.', 'error')
+      return
+    }
+    setConfirmClear(true)
+  }, [executing, addToast])
+
+  useEffect(() => {
+    if (!serverSettingsInitialisedRef.current) return
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(
+          SERVER_SETTINGS_KEY,
+          JSON.stringify({
+            host: serverHost,
+            user: serverUser,
+            password: serverPassword,
+            connected: serverConnected,
+          })
+        )
+      } catch {
+        // ignore storage errors silently
+      }
+    }
+    persistServerMeta({
+      host: serverHost,
+      user: serverUser,
+      password: serverPassword,
+      connected: serverConnected,
+    })
+  }, [serverHost, serverUser, serverPassword, serverConnected, persistServerMeta])
   const dismissToast = useCallback((id) => {
     setToasts((t) => t.filter((x) => x.id !== id))
   }, [])
@@ -244,6 +339,7 @@ function App() {
           host: serverHost,
           user: serverUser,
           password: serverPassword,
+          connected: serverConnected,
         },
       },
     }
@@ -312,6 +408,46 @@ function App() {
     }
   }
 
+  const handleRenamePipeline = (pipelineId, nextName) => {
+    if (!pipelineId) return
+    const trimmed = String(nextName ?? '').trim()
+    const finalName = trimmed || 'Untitled pipeline'
+    const timestamp = new Date().toISOString()
+    setSavedPipelines((prev) => {
+      if (!prev.some((p) => p.id === pipelineId)) return prev
+      const next = prev
+        .map((p) =>
+          p.id === pipelineId ? { ...p, name: finalName, updatedAt: timestamp } : p
+        )
+        .sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        )
+      persistPipelines(next)
+      return next
+    })
+    if (currentPipelineId === pipelineId) {
+      setSettingsPipelineName(finalName)
+    }
+    addToast(`Renamed pipeline to "${finalName}".`, 'success', 2400)
+  }
+
+  const handleDeletePipeline = (pipelineId) => {
+    if (!pipelineId) return
+    let removedName = null
+    setSavedPipelines((prev) => {
+      const target = prev.find((p) => p.id === pipelineId)
+      if (!target) return prev
+      removedName = target.name
+      return deletePipeline(prev, pipelineId)
+    })
+    if (!removedName) return
+    if (currentPipelineId === pipelineId) {
+      setCurrentPipelineId(null)
+      setSettingsPipelineName('Untitled pipeline')
+    }
+    addToast(`Deleted "${removedName}".`, 'success', 2200)
+  }
+
   const handleLoadPipeline = (pipelineId) => {
     if (!pipelineId) return
     const target = savedPipelines.find((p) => p.id === pipelineId)
@@ -339,6 +475,8 @@ function App() {
         setServerHost(server.host || 'localhost')
         setServerUser(server.user || '')
         setServerPassword(server.password || '')
+        setServerConnected(Boolean(server.connected))
+        setConnectingServer(false)
         setChecking(false)
         setIssueCount(0)
         setExecResult(null)
@@ -407,6 +545,8 @@ function App() {
         setServerHost(importedServer.host || 'localhost')
         setServerUser(importedServer.user || '')
         setServerPassword(importedServer.password || '')
+        setServerConnected(Boolean(importedServer.connected))
+        setConnectingServer(false)
         addToast(`Imported "${imported.name}".`, 'success', 2800)
         if (typeof window !== 'undefined') {
           const openNow = window.confirm('Open the imported pipeline now?')
@@ -459,6 +599,22 @@ function App() {
     setTimeout(() => {
       setTestingConnection(false)
       addToast('Connection successful.', 'success', 2600)
+    }, 1400)
+  }
+
+  const handleToggleServerConnection = () => {
+    if (connectingServer) return
+    if (serverConnected) {
+      setServerConnected(false)
+      addToast('Disconnected from remote server.', 'info', 2200)
+      return
+    }
+    setConnectingServer(true)
+    addToast('Connecting to remote server...', 'info', 2000)
+    setTimeout(() => {
+      setConnectingServer(false)
+      setServerConnected(true)
+      addToast('Remote server connected.', 'success', 2600)
     }, 1400)
   }
 
@@ -824,6 +980,9 @@ function App() {
           onDownloadPipeline={handleDownloadPipeline}
           onUploadPipeline={handleUploadPipeline}
           onOpenSettings={openSettings}
+          onClearDashboard={requestClearDashboard}
+          onDeletePipeline={handleDeletePipeline}
+          onRenamePipeline={handleRenamePipeline}
         />
       )}
       {paneMenu.open ? (
@@ -838,16 +997,14 @@ function App() {
             setNodes((nds) => nds.map((n) => ({ ...n, className: undefined, data: { ...n.data, alert: undefined } })))
             setEdges((eds) => eds.map((e) => ({ ...e, animated: false })))
           }}
-          onClear={() => {
-            if (executing) { addToast('Cannot clear while executing.', 'error'); return }
-            setConfirmClear(true)
-          }}
+          onClear={requestClearDashboard}
           onToggleCompact={() => setCompact((v) => !v)}
           onClose={() => setPaneMenu({ open: false, x: 0, y: 0 })}
           onSavePipeline={handleSavePipeline}
           onLoadPipeline={handleLoadClick}
           onDownloadPipeline={handleDownloadPipeline}
           onUploadPipeline={handleUploadPipeline}
+          onOpenSettings={openSettings}
         />
       ) : null}
       {menu.open && menu.node ? (
@@ -1014,6 +1171,7 @@ function App() {
         onSavePipeline={handleSavePipeline}
         onDownloadPipeline={handleDownloadPipeline}
         onUploadPipeline={handleUploadPipeline}
+        onClearDashboard={requestClearDashboard}
         serverHost={serverHost}
         onServerHostChange={setServerHost}
         serverUser={serverUser}
@@ -1022,6 +1180,9 @@ function App() {
         onServerPasswordChange={setServerPassword}
         onTestConnection={handleTestConnection}
         testingConnection={testingConnection}
+        onConnectToggle={handleToggleServerConnection}
+        connecting={connectingServer}
+        connected={serverConnected}
       />
       {loadingPipeline ? (
         <div className="loading-overlay">

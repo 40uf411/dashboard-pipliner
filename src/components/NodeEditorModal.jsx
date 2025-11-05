@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { IoClose } from 'react-icons/io5'
+import { GiCancel } from 'react-icons/gi'
+import { BiSave } from 'react-icons/bi'
 import { getNodeTemplate } from '../nodes/nodeDefinitions.js'
 
 const clone = (value) => JSON.parse(JSON.stringify(value ?? {}))
@@ -447,6 +449,7 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
               onClick={onClose}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClose()}
             >
+              <GiCancel size={16} />
               Cancel
             </button>
             <button
@@ -457,6 +460,7 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
                 if (e.key === 'Enter' || e.key === ' ') handleSave()
               }}
             >
+              <BiSave size={16} />
               Save changes
             </button>
           </div>
