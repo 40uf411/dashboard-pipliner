@@ -1,6 +1,6 @@
 import { IoClose, IoSave } from 'react-icons/io5'
 import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
-import { MdDisplaySettings } from 'react-icons/md'
+import { MdDeleteOutline, MdDisplaySettings } from 'react-icons/md'
 import { LuLayoutDashboard } from 'react-icons/lu'
 import { CgDebug } from 'react-icons/cg'
 import { GrConnect } from 'react-icons/gr'
@@ -121,7 +121,7 @@ export default function SettingsOverlay({
                           onClose && onClose()
                         }}
                       >
-                        <LuLayoutDashboard size={16} />
+                        <MdDeleteOutline size={20} />
                         Clear
                       </button>
                       <button

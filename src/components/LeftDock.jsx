@@ -4,7 +4,6 @@ import { FiGitBranch, FiEdit3 } from 'react-icons/fi'
 import { IoSave, IoOpen } from 'react-icons/io5'
 import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
 import { MdDisplaySettings, MdDeleteOutline } from 'react-icons/md'
-import { LuLayoutDashboard } from 'react-icons/lu'
 import reactLogo from '../assets/react.svg'
 import NodePreview from './NodePreview.jsx'
 import { NODE_SECTIONS, NODE_TEMPLATES } from '../nodes/nodeDefinitions.js'
@@ -91,7 +90,7 @@ function LeftDock({
   onDownloadPipeline,
   onUploadPipeline,
   onOpenSettings,
-  onClearDashboard,
+  onClearSavedPipelines,
   onDeletePipeline,
   onRenamePipeline,
 }) {
@@ -146,13 +145,13 @@ function LeftDock({
             onLoadPipeline={onLoadPipeline}
             onQuickLoad={onQuickLoad}
             onSavePipeline={onSavePipeline}
-          onDownloadPipeline={onDownloadPipeline}
-          onUploadPipeline={onUploadPipeline}
-          onOpenSettings={onOpenSettings}
-          onClearDashboard={onClearDashboard}
-          onDeletePipeline={onDeletePipeline}
-          onRenamePipeline={onRenamePipeline}
-        />
+            onDownloadPipeline={onDownloadPipeline}
+            onUploadPipeline={onUploadPipeline}
+            onOpenSettings={onOpenSettings}
+            onClearSavedPipelines={onClearSavedPipelines}
+            onDeletePipeline={onDeletePipeline}
+            onRenamePipeline={onRenamePipeline}
+          />
         ) : (
           <EmptyPanel title="Outputs" />
         )
@@ -175,7 +174,7 @@ function PipelinesPanel({
   onDownloadPipeline,
   onUploadPipeline,
   onOpenSettings,
-  onClearDashboard,
+  onClearSavedPipelines,
   onDeletePipeline,
   onRenamePipeline,
 }) {
@@ -265,20 +264,20 @@ function PipelinesPanel({
             role="button"
             tabIndex={0}
             onClick={() => {
-              onClearDashboard && onClearDashboard()
+              onClearSavedPipelines && onClearSavedPipelines()
               onClose && onClose()
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
-                onClearDashboard && onClearDashboard()
+                onClearSavedPipelines && onClearSavedPipelines()
                 onClose && onClose()
               }
             }}
-            title="Clear all nodes and edges from the dashboard"
-            aria-label="Clear dashboard"
+            title="Remove all saved pipelines from this browser"
+            aria-label="Clear saved pipelines"
           >
-            <LuLayoutDashboard size={18} />
-            <span>Clear</span>
+            <MdDeleteOutline size={18} />
+            <span>Clear cache</span>
           </div>
           <div
             className="pipeline-action"

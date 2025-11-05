@@ -111,6 +111,7 @@ function App() {
   const [compact, setCompact] = useState(false)
   const [paneMenu, setPaneMenu] = useState({ open: false, x: 0, y: 0 })
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmClearSaved, setConfirmClearSaved] = useState(false)
   const [pipelinePreview, setPipelinePreview] = useState(null)
   const [savedPipelines, setSavedPipelines] = useState([])
   const [currentPipelineId, setCurrentPipelineId] = useState(null)
@@ -246,6 +247,14 @@ function App() {
     }
     setConfirmClear(true)
   }, [executing, addToast])
+
+  const requestClearSavedPipelines = useCallback(() => {
+    if (savedPipelines.length === 0) {
+      addToast('No saved pipelines to clear.', 'info', 2200)
+      return
+    }
+    setConfirmClearSaved(true)
+  }, [savedPipelines, addToast])
 
   useEffect(() => {
     if (!serverSettingsInitialisedRef.current) return
@@ -447,6 +456,23 @@ function App() {
     }
     addToast(`Deleted "${removedName}".`, 'success', 2200)
   }
+
+  const handleClearSavedPipelines = useCallback(() => {
+    let cleared = false
+    setSavedPipelines((prev) => {
+      if (prev.length === 0) return prev
+      cleared = true
+      persistPipelines([])
+      return []
+    })
+    if (cleared) {
+      setCurrentPipelineId(null)
+      setSettingsPipelineName('Untitled pipeline')
+      addToast('Cleared all saved pipelines.', 'success', 2400)
+    } else {
+      addToast('No saved pipelines to clear.', 'info', 2200)
+    }
+  }, [addToast])
 
   const handleLoadPipeline = (pipelineId) => {
     if (!pipelineId) return
@@ -981,7 +1007,7 @@ function App() {
           onDownloadPipeline={handleDownloadPipeline}
           onUploadPipeline={handleUploadPipeline}
           onOpenSettings={openSettings}
-          onClearDashboard={requestClearDashboard}
+          onClearSavedPipelines={requestClearSavedPipelines}
           onDeletePipeline={handleDeletePipeline}
           onRenamePipeline={handleRenamePipeline}
         />
@@ -1162,6 +1188,16 @@ function App() {
           setCurrentPipelineId(null)
           setNodes([])
           setEdges([])
+        }}
+      />
+      <ConfirmDialog
+        open={confirmClearSaved}
+        title="Clear saved pipelines?"
+        message="This will remove all saved pipelines from this browser. This action cannot be undone."
+        onCancel={() => setConfirmClearSaved(false)}
+        onConfirm={() => {
+          setConfirmClearSaved(false)
+          handleClearSavedPipelines()
         }}
       />
       <SettingsOverlay

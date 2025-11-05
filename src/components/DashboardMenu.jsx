@@ -58,7 +58,7 @@ export default function DashboardMenu({
     },
     {
       key: 'clear',
-      label: 'Clear dashboard',
+      label: 'Empty dashboard',
       icon: <LuLayoutDashboard size={16} />,
       action: onClear,
       danger: true,
