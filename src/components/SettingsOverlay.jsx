@@ -5,6 +5,7 @@ import { LuLayoutDashboard } from 'react-icons/lu'
 import { CgDebug } from 'react-icons/cg'
 import { GrConnect } from 'react-icons/gr'
 import { TbPlugConnectedX } from 'react-icons/tb'
+import useModalPresence from '../hooks/useModalPresence.js'
 
 const HOTKEYS = [
   { combo: 'Ctrl / Cmd + S', description: 'Save the current pipeline' },
@@ -35,11 +36,13 @@ export default function SettingsOverlay({
   connecting = false,
   connected = false,
 }) {
-  if (!open) return null
+  const [shouldRender, isLeaving] = useModalPresence(open, 700)
+  if (!shouldRender) return null
+  const transitionState = isLeaving ? 'modal-leaving' : 'modal-entering'
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
+    <div className={`settings-overlay ${transitionState}`} onClick={onClose}>
+      <div className={`settings-modal ${transitionState}`} onClick={(e) => e.stopPropagation()}>
         <button
           className="icon-button settings-close"
           type="button"

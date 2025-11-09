@@ -1,6 +1,7 @@
 import { IoClose } from 'react-icons/io5'
 import { GiCancel } from 'react-icons/gi'
 import { BiSave } from 'react-icons/bi'
+import useModalPresence from '../hooks/useModalPresence.js'
 
 export default function ConfirmDialog({
   open,
@@ -9,11 +10,13 @@ export default function ConfirmDialog({
   onCancel,
   onConfirm,
 }) {
-  if (!open) return null
+  const [shouldRender, isLeaving] = useModalPresence(open, 640)
+  const transitionState = isLeaving ? 'modal-leaving' : 'modal-entering'
+  if (!shouldRender) return null
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-shell" onClick={(e) => e.stopPropagation()}>
-        <div className="glass-card modal-card confirm-card">
+    <div className={`modal-overlay ${transitionState}`} onClick={onCancel}>
+      <div className={`modal-shell ${transitionState}`} onClick={(e) => e.stopPropagation()}>
+        <div className={`glass-card modal-card confirm-card ${transitionState}`}>
           <div className="glass-header">
             <div>
               <p className="glass-eyebrow">Confirmation</p>

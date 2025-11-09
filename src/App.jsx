@@ -643,23 +643,19 @@ function App() {
   }
 
   const handleServerDisconnect = useCallback(() => {
-    if (!serverConnected || connectingServer) return
-    setConnectingServer(true)
+    if (!serverConnected) return
+    setConnectingServer(false)
+    setServerConnected(false)
     appendServerConversation({
       source: 'front-end',
       message: '⇢ disconnect requested · closing session',
     })
-    addToast('Disconnecting from remote server...', 'info', 1800)
-    setTimeout(() => {
-      setServerConnected(false)
-      setConnectingServer(false)
-      appendServerConversation({
-        source: 'server',
-        message: 'session closed · see you soon',
-      })
-      addToast('Disconnected from remote server.', 'info', 2200)
-    }, 900)
-  }, [serverConnected, connectingServer, appendServerConversation, addToast])
+    appendServerConversation({
+      source: 'server',
+      message: 'session closed · see you soon',
+    })
+    addToast('Disconnected from remote server.', 'info', 2200)
+  }, [serverConnected, appendServerConversation, addToast])
 
   const handleServerConnect = useCallback(() => {
     if (connectingServer || serverConnected) return
@@ -1113,20 +1109,19 @@ function App() {
           onClose={() => setMenu({ open: false, x: 0, y: 0, node: null })}
         />
       ) : null}
-      {editingNode ? (
-        <NodeEditorModal
-          node={editingNode}
-          onClose={() => setEditingNode(null)}
-          onSave={({ title, params }) => {
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === editingNode.id ? { ...n, data: { ...n.data, title, params } } : n
-              )
+      <NodeEditorModal
+        node={editingNode}
+        onClose={() => setEditingNode(null)}
+        onSave={({ title, params }) => {
+          if (!editingNode) return
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === editingNode.id ? { ...n, data: { ...n.data, title, params } } : n
             )
-            setEditingNode(null)
-          }}
-        />
-      ) : null}
+          )
+          setEditingNode(null)
+        }}
+      />
       <input
         type="file"
         accept=".board,application/json"
@@ -1134,42 +1129,43 @@ function App() {
         style={{ display: 'none' }}
         onChange={handlePipelineFileSelected}
       />
-      <BottomBar
-        nodesCount={nodes.length}
-        isDark={isDark}
-        onToggleDark={() => setIsDark((d) => !d)}
-        zoom={zoomPct}
-        onZoomChange={(pct) => {
-          setZoomPct(pct)
-          if (rfInstance) rfInstance.zoomTo(pct / 100, { duration: 120 })
-        }}
-        onZoomStep={(delta) => {
-          const next = Math.min(150, Math.max(50, zoomPct + delta))
-          setZoomPct(next)
-          if (rfInstance) rfInstance.zoomTo(next / 100, { duration: 120 })
-        }}
-        interactive={interactive}
-        onToggleInteractive={() => setInteractive((v) => !v)}
-        onFitView={() => {
-          if (!rfInstance) return
-          rfInstance.fitView({ padding: 0.2, duration: 200 })
-        }}
-        checking={checking}
-        onToggleCheck={toggleCheck}
-        issueCount={issueCount}
-        executing={executing}
-        execResult={execResult}
-        compact={compact}
-        onScreenshot={downloadScreenshot}
-        onSavePipeline={handleSavePipeline}
-        onLoadPipeline={handleLoadClick}
-        onDownloadPipeline={handleDownloadPipeline}
-        onUploadPipeline={handleUploadPipeline}
-        onOpenSettings={openSettings}
-        onRun={async () => {
-          if (executing) return
-          setExecResult(null)
-          setExecuting(true)
+      {!compact && (
+        <BottomBar
+          nodesCount={nodes.length}
+          isDark={isDark}
+          onToggleDark={() => setIsDark((d) => !d)}
+          zoom={zoomPct}
+          onZoomChange={(pct) => {
+            setZoomPct(pct)
+            if (rfInstance) rfInstance.zoomTo(pct / 100, { duration: 120 })
+          }}
+          onZoomStep={(delta) => {
+            const next = Math.min(150, Math.max(50, zoomPct + delta))
+            setZoomPct(next)
+            if (rfInstance) rfInstance.zoomTo(next / 100, { duration: 120 })
+          }}
+          interactive={interactive}
+          onToggleInteractive={() => setInteractive((v) => !v)}
+          onFitView={() => {
+            if (!rfInstance) return
+            rfInstance.fitView({ padding: 0.2, duration: 200 })
+          }}
+          checking={checking}
+          onToggleCheck={toggleCheck}
+          issueCount={issueCount}
+          executing={executing}
+          execResult={execResult}
+          compact={compact}
+          onScreenshot={downloadScreenshot}
+          onSavePipeline={handleSavePipeline}
+          onLoadPipeline={handleLoadClick}
+          onDownloadPipeline={handleDownloadPipeline}
+          onUploadPipeline={handleUploadPipeline}
+          onOpenSettings={openSettings}
+          onRun={async () => {
+            if (executing) return
+            setExecResult(null)
+            setExecuting(true)
           // reset node statuses and alerts at the start of a run
           setNodes((nds) => nds.map((n) => ({ ...n, className: undefined, data: { ...n.data, alert: undefined } })))
           // animate edges
@@ -1230,8 +1226,9 @@ function App() {
             // Add green alerts to successful nodes if none present
             setNodes((nds) => nds.map((n) => (n.className === 'rf-node-ok' && !n.data?.alert ? { ...n, data: { ...n.data, alert: { color: 'green', message: 'Completed' } } } : n)))
           }
-        }}
-      />
+          }}
+        />
+      )}
       <Toast toasts={toasts} onDismiss={dismissToast} />
       <ConfirmDialog
         open={confirmClear}

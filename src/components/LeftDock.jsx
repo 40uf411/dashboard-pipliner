@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, memo } from 'react'
-import { TbGitBranch, TbHierarchy2, TbDownload } from 'react-icons/tb'
+﻿import { useEffect, useRef, useState, memo } from 'react'
+import { TbHierarchy2, TbDownload, TbPlugConnectedX } from 'react-icons/tb'
 import { FiGitBranch, FiEdit3 } from 'react-icons/fi'
 import { IoSave, IoOpen } from 'react-icons/io5'
 import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
 import { MdDisplaySettings, MdDeleteOutline } from 'react-icons/md'
+import { LuSquareTerminal } from 'react-icons/lu'
+import { GrConnect } from 'react-icons/gr'
 import reactLogo from '../assets/react.svg'
 import NodePreview from './NodePreview.jsx'
 import { NODE_SECTIONS, NODE_TEMPLATES } from '../nodes/nodeDefinitions.js'
@@ -26,7 +28,7 @@ function NodesPanel({ onAdd, disabled }) {
               onClick={() => toggle(sec.key)}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggle(sec.key)}
             >
-              <span className={`chev ${open.includes(sec.key) ? 'open' : ''}`}>▸</span>
+              <span className={`chev ${open.includes(sec.key) ? 'open' : ''}`}>&gt;</span>
               {sec.title}
             </div>
             {open.includes(sec.key) ? (
@@ -75,6 +77,202 @@ function EmptyPanel({ title }) {
   )
 }
 
+function TerminalPanel({
+  connected,
+  connecting,
+  serverHost,
+  serverUser,
+  serverPassword,
+  onServerHostChange,
+  onServerUserChange,
+  onServerPasswordChange,
+  logs = [],
+  onConnect,
+  onDisconnect,
+}) {
+  const displayedLogs = Array.isArray(logs) ? logs : []
+  const [disconnecting, setDisconnecting] = useState(false)
+
+  useEffect(() => {
+    if (!connected) setDisconnecting(false)
+  }, [connected])
+
+  const hint = connecting
+    ? 'Connecting to backend...'
+    : disconnecting
+        ? 'Disconnecting from backend...'
+        : connected
+            ? 'Front <-> Server stream'
+            : 'Not connected - configure backend'
+
+  const handleDownloadLogs = () => {
+    if (!displayedLogs.length) return
+    const logText = displayedLogs
+      .map((entry) => `[${entry.time}] ${(entry.source || '').toUpperCase()} ${entry.message}`)
+      .join('\n')
+    const blob = new Blob([logText], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `terminal-log-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleConnectSubmit = (e) => {
+    e.preventDefault()
+    if (connecting) return
+    onConnect && onConnect()
+  }
+
+  const handleToggleConnection = () => {
+    if (connecting || disconnecting) return
+    if (connected) {
+      setDisconnecting(true)
+      onDisconnect && onDisconnect()
+      return
+    }
+    onConnect && onConnect()
+  }
+
+  const buttonBusy = connecting || disconnecting
+  const showConnecting = connecting && !connected
+  const showDisconnecting = disconnecting && connected
+  const overlayActive = buttonBusy
+  const overlayText = showDisconnecting ? 'Tearing down session...' : 'Establishing secure tunnel...'
+
+  return (
+    <div className="left-panel terminal-panel" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="panel-header terminal-header">
+        <div className="terminal-title-block">
+          <span>Terminal</span>
+          <span className="terminal-hint">{hint}</span>
+        </div>
+        <div className="terminal-actions">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleToggleConnection}
+            disabled={
+              buttonBusy ||
+              (!connected && !onConnect) ||
+              (connected && !onDisconnect)
+            }
+          >
+            {showConnecting ? (
+              'Connecting...'
+            ) : showDisconnecting ? (
+              'Disconnecting...'
+            ) : connected ? (
+              <>
+                <TbPlugConnectedX size={16} />
+                Disconnect
+              </>
+            ) : (
+              <>
+                <GrConnect size={16} />
+                Connect
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleDownloadLogs}
+            disabled={!displayedLogs.length}
+          >
+            <RiDownloadCloud2Fill size={16} />
+            Download log
+          </button>
+        </div>
+      </div>
+      <div className="terminal-shell">
+        <div className="terminal-chrome" aria-hidden="true">
+          <span className="terminal-title">session: dashboard-preview</span>
+        </div>
+        <div
+          className={`terminal-viewport ${connected ? 'state-connected' : 'state-disconnected'}${
+            buttonBusy ? ' is-transitioning' : ''
+          }`}
+        >
+          <div className="terminal-view terminal-view-log" aria-hidden={!connected}>
+            <div className="terminal-body">
+              {displayedLogs.length ? (
+                displayedLogs.map((entry, idx) => (
+                  <div key={entry.id || entry.message || idx} className="terminal-row">
+                    <span className="terminal-time">{entry.time}</span>
+                    <span className={`terminal-source ${entry.source === 'front-end' ? 'outbound' : 'inbound'}`}>
+                      {entry.source}
+                    </span>
+                    <span className="terminal-text">{entry.message}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="terminal-empty">No conversation recorded yet.</div>
+              )}
+            </div>
+          </div>
+          <div className="terminal-view terminal-view-form" aria-hidden={connected}>
+            <form className="terminal-settings" onSubmit={handleConnectSubmit}>
+              <div className="terminal-settings-grid">
+                <label className="field">
+                  <span className="field-label">Hostname</span>
+                  <input
+                    className="field-input"
+                    type="text"
+                    value={serverHost}
+                    onChange={(e) => onServerHostChange && onServerHostChange(e.target.value)}
+                    placeholder="e.g. pipelines.internal"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Username</span>
+                  <input
+                    className="field-input"
+                    type="text"
+                    value={serverUser}
+                    onChange={(e) => onServerUserChange && onServerUserChange(e.target.value)}
+                    placeholder="deploy"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Password</span>
+                  <input
+                    className="field-input"
+                    type="password"
+                    value={serverPassword}
+                    onChange={(e) => onServerPasswordChange && onServerPasswordChange(e.target.value)}
+                    placeholder="********"
+                  />
+                </label>
+              </div>
+              <div className="terminal-settings-actions">
+                <button type="submit" className="btn-primary" disabled={connecting}>
+                  {connecting ? (
+                    'Connecting...'
+                  ) : (
+                    <>
+                      <GrConnect size={16} />
+                      Connect
+                    </>
+                  )}
+                </button>
+                <span className="terminal-hint subtle">Connection logic pending integration</span>
+              </div>
+            </form>
+          </div>
+
+          <div className={`terminal-transition-overlay${overlayActive ? ' active' : ''}`}>
+            <div className="loading-spinner tiny" />
+            <span className="terminal-transition-text">{overlayText}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 function LeftDock({
   active,
   onToggle,
@@ -93,6 +291,17 @@ function LeftDock({
   onClearSavedPipelines,
   onDeletePipeline,
   onRenamePipeline,
+  serverConnected = false,
+  connectingServer = false,
+  serverHost = 'localhost',
+  serverUser = '',
+  serverPassword = '',
+  onServerHostChange = () => {},
+  onServerUserChange = () => {},
+  onServerPasswordChange = () => {},
+  onConnectServer = () => {},
+  onDisconnectServer = () => {},
+  terminalLogs = [],
 }) {
   return (
     <>
@@ -130,6 +339,17 @@ function LeftDock({
         >
           <TbDownload size={18} />
         </div>
+        <div
+          className={`left-nav-btn ${active === 'terminal' ? 'active' : ''}`}
+          role="button"
+          tabIndex={0}
+          onClick={() => onToggle('terminal')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onToggle('terminal')}
+          title="Terminal"
+          aria-label="Terminal"
+        >
+          <LuSquareTerminal size={18} />
+        </div>
       </div>
 
       {active ? (
@@ -151,6 +371,20 @@ function LeftDock({
             onClearSavedPipelines={onClearSavedPipelines}
             onDeletePipeline={onDeletePipeline}
             onRenamePipeline={onRenamePipeline}
+          />
+        ) : active === 'terminal' ? (
+          <TerminalPanel
+            connected={serverConnected}
+            connecting={connectingServer}
+            serverHost={serverHost}
+            serverUser={serverUser}
+            serverPassword={serverPassword}
+            onServerHostChange={onServerHostChange}
+            onServerUserChange={onServerUserChange}
+            onServerPasswordChange={onServerPasswordChange}
+            onConnect={onConnectServer}
+            onDisconnect={onDisconnectServer}
+            logs={terminalLogs}
           />
         ) : (
           <EmptyPanel title="Outputs" />
@@ -461,3 +695,7 @@ function PipelinesPanel({
     </div>
   )
 }
+
+
+
+

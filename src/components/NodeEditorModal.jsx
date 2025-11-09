@@ -3,6 +3,7 @@ import { IoClose } from 'react-icons/io5'
 import { GiCancel } from 'react-icons/gi'
 import { BiSave } from 'react-icons/bi'
 import { getNodeTemplate } from '../nodes/nodeDefinitions.js'
+import useModalPresence from '../hooks/useModalPresence.js'
 
 const clone = (value) => JSON.parse(JSON.stringify(value ?? {}))
 
@@ -30,22 +31,33 @@ function fromEntries(entries, originalParams) {
 }
 
 export default function NodeEditorModal({ node, onSave, onClose }) {
-  const templateKey = node?.data?.templateKey
+  const [cachedNode, setCachedNode] = useState(node)
+  const [shouldRender, isLeaving] = useModalPresence(Boolean(node), 660)
+
+  useEffect(() => {
+    if (node) setCachedNode(node)
+  }, [node])
+
+  const targetNode = node || cachedNode
+
+  if (!shouldRender || !targetNode) return null
+
+  const templateKey = targetNode?.data?.templateKey
   const template = templateKey ? getNodeTemplate(templateKey) : null
   const structured = Boolean(template && template.editable && Array.isArray(template.fields) && template.fields.length)
 
-  const initialTitle = node?.data?.title ?? ''
+  const initialTitle = targetNode?.data?.title ?? ''
   const [title, setTitle] = useState(initialTitle)
 
   const initialStructured = useMemo(() => {
     if (!structured) return {}
     const defaults = template?.defaultParams ? clone(template.defaultParams) : {}
-    const provided = node?.data?.params ? clone(node.data.params) : {}
+    const provided = targetNode?.data?.params ? clone(targetNode.data.params) : {}
     return { ...defaults, ...provided }
-  }, [structured, template, node])
+  }, [structured, template, targetNode])
 
   const [formValues, setFormValues] = useState(initialStructured)
-  const [entries, setEntries] = useState(() => (!structured ? toEntries(node?.data?.params) : []))
+  const [entries, setEntries] = useState(() => (!structured ? toEntries(targetNode?.data?.params) : []))
 
   useEffect(() => setTitle(initialTitle), [initialTitle])
 
@@ -53,9 +65,9 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
     if (structured) {
       setFormValues(initialStructured)
     } else {
-      setEntries(toEntries(node?.data?.params))
+      setEntries(toEntries(targetNode?.data?.params))
     }
-  }, [structured, initialStructured, node])
+  }, [structured, initialStructured, targetNode])
 
   useEffect(() => {
     const onKey = (e) => {
@@ -282,7 +294,7 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
 
   const buildParams = () => {
     if (!structured || !template) {
-      return fromEntries(entries, node?.data?.params)
+      return fromEntries(entries, targetNode?.data?.params)
     }
     const values = formValues
     const result = {}
@@ -346,11 +358,12 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
   ) : null
 
   const fallbackHasParams = entries.length > 0
+  const transitionState = isLeaving ? 'modal-leaving' : 'modal-entering'
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-shell" onClick={(e) => e.stopPropagation()}>
-        <div className="glass-card modal-card">
+    <div className={`modal-overlay ${transitionState}`} onClick={onClose}>
+      <div className={`modal-shell ${transitionState}`} onClick={(e) => e.stopPropagation()}>
+        <div className={`glass-card modal-card ${transitionState}`}>
           <div className="glass-header">
             <div>
               <p className="glass-eyebrow">{template?.subtitle || 'Node'}</p>
