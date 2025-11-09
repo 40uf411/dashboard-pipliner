@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactFlow, {
   Background,
   MiniMap,
@@ -124,6 +124,7 @@ function App() {
   const [testingConnection, setTestingConnection] = useState(false)
   const [serverConnected, setServerConnected] = useState(false)
   const [connectingServer, setConnectingServer] = useState(false)
+  const [serverConversation, setServerConversation] = useState([])
   const fileInputRef = useRef(null)
   const serverSettingsInitialisedRef = useRef(false)
 
@@ -189,7 +190,7 @@ function App() {
       setServerUser(server.user || '')
       setServerPassword(server.password || '')
       setServerConnected(Boolean(server.connected))
-      setConnectingServer(false)
+      
     }
   }, [currentPipelineRecord?.id])
 
@@ -206,6 +207,19 @@ function App() {
   const addToast = useCallback((message, type = 'error', duration = 5000) => {
     const id = Date.now() + Math.random()
     setToasts((t) => [...t, { id, message, type, duration }])
+  }, [])
+
+  const appendServerConversation = useCallback((entry) => {
+    setServerConversation((prev) => {
+      const nextEntry = {
+        id: entry.id || `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        time: entry.time || new Date().toLocaleTimeString(),
+        source: entry.source || 'front-end',
+        message: entry.message || '',
+      }
+      const next = [...prev, nextEntry]
+      return next.length > 400 ? next.slice(next.length - 400) : next
+    })
   }, [])
 
   const persistServerMeta = useCallback(
@@ -502,7 +516,7 @@ function App() {
         setServerUser(server.user || '')
         setServerPassword(server.password || '')
         setServerConnected(Boolean(server.connected))
-        setConnectingServer(false)
+        
         setChecking(false)
         setIssueCount(0)
         setExecResult(null)
@@ -572,7 +586,7 @@ function App() {
         setServerUser(importedServer.user || '')
         setServerPassword(importedServer.password || '')
         setServerConnected(Boolean(importedServer.connected))
-        setConnectingServer(false)
+        
         addToast(`Imported "${imported.name}".`, 'success', 2800)
         if (typeof window !== 'undefined') {
           const openNow = window.confirm('Open the imported pipeline now?')
@@ -628,20 +642,51 @@ function App() {
     }, 1400)
   }
 
-  const handleToggleServerConnection = () => {
-    if (connectingServer) return
-    if (serverConnected) {
+  const handleServerDisconnect = useCallback(() => {
+    if (!serverConnected || connectingServer) return
+    setConnectingServer(true)
+    appendServerConversation({
+      source: 'front-end',
+      message: '⇢ disconnect requested · closing session',
+    })
+    addToast('Disconnecting from remote server...', 'info', 1800)
+    setTimeout(() => {
       setServerConnected(false)
+      setConnectingServer(false)
+      appendServerConversation({
+        source: 'server',
+        message: 'session closed · see you soon',
+      })
       addToast('Disconnected from remote server.', 'info', 2200)
-      return
-    }
+    }, 900)
+  }, [serverConnected, connectingServer, appendServerConversation, addToast])
+
+  const handleServerConnect = useCallback(() => {
+    if (connectingServer || serverConnected) return
     setConnectingServer(true)
     addToast('Connecting to remote server...', 'info', 2000)
+    appendServerConversation({
+      source: 'front-end',
+      message: `⇢ connect ${serverHost || 'host'} as ${serverUser || 'anonymous'}`,
+    })
     setTimeout(() => {
       setConnectingServer(false)
       setServerConnected(true)
+      appendServerConversation({
+        source: 'server',
+        message: '⇠ connection established · ready for commands',
+      })
       addToast('Remote server connected.', 'success', 2600)
     }, 1400)
+  }, [connectingServer, serverConnected, serverHost, serverUser, appendServerConversation, addToast])
+
+  const handleToggleServerConnection = () => {
+    if (connectingServer) return
+    if (serverConnected) {
+      handleServerDisconnect()
+      return
+    }
+    handleServerConnect()
   }
 
   const rootClassName = [
@@ -1010,6 +1055,17 @@ function App() {
           onClearSavedPipelines={requestClearSavedPipelines}
           onDeletePipeline={handleDeletePipeline}
           onRenamePipeline={handleRenamePipeline}
+          serverConnected={serverConnected}
+          connectingServer={connectingServer}
+          serverHost={serverHost}
+          serverUser={serverUser}
+          serverPassword={serverPassword}
+          onServerHostChange={setServerHost}
+          onServerUserChange={setServerUser}
+          onServerPasswordChange={setServerPassword}
+          onConnectServer={handleServerConnect}
+          onDisconnectServer={handleServerDisconnect}
+          terminalLogs={serverConversation}
         />
       )}
       {paneMenu.open ? (
@@ -1232,3 +1288,7 @@ function App() {
 }
 
 export default App
+
+
+
+
