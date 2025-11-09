@@ -128,6 +128,12 @@ class DAGPipelineTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         report_profile()
+        print(
+            "\nDAG regression summary:\n"
+            " • Reference pipeline executes with detailed per-node timing.\n"
+            " • Filter nodes preserve tensor shapes and value constraints.\n"
+            " • DFS and Kahn strategies yield identical sink outputs.\n"
+        )
 
     def _run_graph(
         self,

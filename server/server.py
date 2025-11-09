@@ -47,7 +47,7 @@ from app.services import DATABASE, reset_server_state, route_message
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    format="%(asctime)s | pid=%(process)d | %(levelname)s | %(name)s | %(message)s",
 )
 LOGGER = logging.getLogger("alger-server")
 
@@ -80,6 +80,13 @@ __all__ = [
     "run_server",
     "main",
 ]
+
+
+def _log_with_context(level: int, context: RequestContext | None, message: str, *args: Any) -> None:
+    if context and context.log_label:
+        LOGGER.log(level, "%s " + message, context.log_label, *args)
+    else:
+        LOGGER.log(level, message, *args)
 
 
 def _log_message(conversation_id: str | None, direction: str, payload: Dict[str, Any]) -> None:
@@ -150,16 +157,22 @@ async def alger_handler(websocket: WebSocketServerProtocol) -> None:
         conversation_id=conversation_id,
         client_ip=remote_ip,
     )
+    context.log_label = f"[conn={connection_id} user={context.username}]"
+    _log_with_context(
+        logging.INFO,
+        context,
+        "Client connected from %s",
+        websocket.remote_address,
+    )
 
     last_message_id = 0
-    LOGGER.info("Client connected from %s", websocket.remote_address)
 
     try:
         while True:
             try:
                 raw_message = await websocket.recv()
             except ConnectionClosed:
-                LOGGER.info("Client disconnected")
+                _log_with_context(logging.INFO, context, "Client disconnected")
                 break
 
             try:
@@ -265,6 +278,7 @@ async def alger_handler(websocket: WebSocketServerProtocol) -> None:
             DATABASE.close_conversation(conversation_id)
         if connection_id:
             DATABASE.close_connection(connection_id)
+        _log_with_context(logging.INFO, context, "Connection closed and cleaned up")
 
 
 async def run_server(stop_event: asyncio.Event | None = None) -> None:

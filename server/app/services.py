@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, Tuple
 
 from .dag import PipelineError
@@ -38,6 +39,14 @@ DATABASE = SQLitePersistenceGateway(DB_PATH)
 DATABASE.initialize()
 
 SERVER_STATE: Dict[str, Any] = default_server_state()
+LOGGER = logging.getLogger("alger-server")
+
+
+def _log(level: int, context: RequestContext, message: str, *args: Any) -> None:
+    if context and context.log_label:
+        LOGGER.log(level, "%s " + message, context.log_label, *args)
+    else:
+        LOGGER.log(level, message, *args)
 
 
 def reset_server_state() -> None:
@@ -145,6 +154,7 @@ def handle_execute_from_db(message, context):
     if not graph_payload:
         return CODE_EXECUTION_FROM_DB_ERROR, {"error": "pipeline graph missing"}
 
+    _log(logging.INFO, context, "Pipeline '%s' requested from DB", pipeline_id)
     blocker = _execution_blocker()
     if blocker:
         return blocker
@@ -157,6 +167,13 @@ def handle_execute_from_db(message, context):
         requested_by=context.user_id,
         status="running",
         output={"file": None, "content": None},
+    )
+    _log(
+        logging.INFO,
+        context,
+        "Execution %s (pipeline=%s) created; starting DAG run",
+        execution["id"],
+        pipeline_id,
     )
     return _run_and_finalize_execution(
         message=message,
@@ -173,6 +190,7 @@ def handle_execute_from_payload(message, context):
     if not graph:
         return CODE_EXECUTION_FROM_PAYLOAD_ERROR, {"error": "graph definition missing"}
 
+    _log(logging.INFO, context, "Ad-hoc payload execution requested")
     blocker = _execution_blocker()
     if blocker:
         return blocker
@@ -185,6 +203,12 @@ def handle_execute_from_payload(message, context):
         requested_by=context.user_id,
         status="running",
         output={"file": None, "content": None},
+    )
+    _log(
+        logging.INFO,
+        context,
+        "Execution %s (payload) created; starting DAG run",
+        execution["id"],
     )
     return _run_and_finalize_execution(
         message=message,
@@ -206,6 +230,13 @@ def _run_and_finalize_execution(
     failure_code: int,
 ):
     strategy = message.content.get("strategy", "kahn")
+    _log(
+        logging.INFO,
+        context,
+        "Running DAG execution %s via strategy '%s'",
+        execution_id,
+        strategy,
+    )
     try:
         _, summary = run_graph(graph_payload, strategy=strategy)
     except PipelineError as exc:
@@ -222,6 +253,13 @@ def _run_and_finalize_execution(
             severity="pipeline",
             message=str(exc),
             payload={"pipelineId": message.content.get("pipelineId"), "strategy": strategy},
+        )
+        _log(
+            logging.ERROR,
+            context,
+            "Execution %s failed: %s",
+            execution_id,
+            exc,
         )
         return failure_code, {"error": str(exc)}
 
@@ -246,6 +284,12 @@ def _run_and_finalize_execution(
             "pipelineId": message.content.get("pipelineId"),
         },
     )
+    _log(
+        logging.INFO,
+        context,
+        "Execution %s finished successfully",
+        execution_id,
+    )
     return success_code, {
         "executionId": execution_id,
         "status": "pipeline-execution-started",
@@ -267,6 +311,7 @@ def handle_stop_execution(message, context):
         "stop_execution",
         {"executionId": execution_id, "messageId": message.message_id},
     )
+    _log(logging.WARNING, context, "Execution %s stopped by client", execution_id)
     return CODE_STOP_EXECUTION_OK, {
         "executionId": execution_id,
         "status": "stopped",
@@ -292,6 +337,13 @@ def handle_request_output(message, context):
         {"executionId": execution_id, "messageId": message.message_id},
     )
     decoded_content = decode_summary(execution["output"]["content"])
+    _log(
+        logging.INFO,
+        context,
+        "Fetched output for execution %s (status=%s)",
+        execution_id,
+        execution.get("status"),
+    )
     return CODE_PIPELINE_FINISHED_OK, {
         "executionId": execution_id,
         "file": execution["output"]["file"],

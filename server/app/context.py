@@ -14,3 +14,4 @@ class RequestContext:
     connection_id: str
     conversation_id: str
     client_ip: str | None = None
+    log_label: str = ""

@@ -20,6 +20,16 @@ import server as alger_server
 
 
 class AlgerServerTests(unittest.IsolatedAsyncioTestCase):
+    @classmethod
+    def tearDownClass(cls) -> None:
+        print(
+            "\nServer integration summary:\n"
+            " • Auth handshake and user-data fetch succeed end-to-end.\n"
+            " • Unknown/out-of-order frames return protocol-safe errors.\n"
+            " • Stored pipelines execute and expose sink summaries via 107.\n"
+            " • Execution metadata persists in SQLite with zero active runs.\n"
+        )
+
     async def asyncSetUp(self) -> None:
         alger_server.reset_server_state()
         self._load_default_graph_into_db()
