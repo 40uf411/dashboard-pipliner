@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://seeklogo.com/images/R/rainbow-six-siege-zofia-icon-logo-1EA6B6159E-seeklogo.com.png" alt="Zofia logo" width="150" />
+  <img src="./logo.png" alt="Zofia logo" width="150" />
 </p>
 
 # Zofia - Zero-Ops Framework for Intelligent Automation
