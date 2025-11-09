@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import networkx as nx
@@ -21,6 +22,10 @@ class PipelineError(Exception):
 NodeInput = Union[None, Any, List[Any]]
 NodeOutput = Any
 NodeFn = Callable[[NodeInput, Dict[str, Any]], NodeOutput]
+ObserverFn = Callable[
+    [str, "Node", NodeInput, NodeOutput, float, List[str]],
+    None,
+]
 
 
 @dataclass(frozen=True)
@@ -84,12 +89,98 @@ def _fn_segmentation(inp: NodeInput, params: Dict[str, Any]) -> np.ndarray:
     thr = float(params.get("threshold", 0.5))
     return (inp >= thr).astype(np.uint8)
 
-# Per your request, these just return the input
-def _fn_structural_descriptor(inp: NodeInput, _params: Dict[str, Any]) -> NodeOutput:
-    return inp
+def _ensure_image_array(inp: NodeInput, *, node_kind: str) -> np.ndarray:
+    """Validate and normalize image-like tensors to (C, Y, X) float32 arrays."""
+    if not isinstance(inp, np.ndarray):
+        raise PipelineError(f"{node_kind} expects a numpy array")
+    arr = np.asarray(inp, dtype=np.float32)
+    if arr.ndim == 2:
+        arr = arr[np.newaxis, ...]
+    if arr.ndim != 3:
+        raise PipelineError(f"{node_kind} expects an array shaped (C, Y, X)")
+    return arr
 
-def _fn_simulation(inp: NodeInput, _params: Dict[str, Any]) -> NodeOutput:
-    return inp
+def _fn_filter(inp: NodeInput, params: Dict[str, Any]) -> np.ndarray:
+    """Simple spatial mean filter with odd-sized kernels."""
+    arr = _ensure_image_array(inp, node_kind="filter")
+    filter_type = str(params.get("filterType", "mean")).lower()
+    if filter_type not in {"mean", "average"}:
+        raise PipelineError(
+            f"Unsupported filterType '{filter_type}'. Supported: mean/average."
+        )
+    try:
+        kernel_size = int(params.get("kernelSize", 3))
+    except (TypeError, ValueError):
+        raise PipelineError("kernelSize must be an integer") from None
+    if kernel_size <= 0 or kernel_size % 2 == 0:
+        raise PipelineError("kernelSize must be a positive odd integer")
+    pad = kernel_size // 2
+    padded = np.pad(arr, ((0, 0), (pad, pad), (pad, pad)), mode="edge")
+    out = np.empty_like(arr, dtype=np.float32)
+    area = float(kernel_size * kernel_size)
+    for y in range(arr.shape[1]):
+        for x in range(arr.shape[2]):
+            window = padded[:, y : y + kernel_size, x : x + kernel_size]
+            out[:, y, x] = window.sum(axis=(1, 2)) / area
+    return out
+
+def _fn_structural_descriptor(inp: NodeInput, _params: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute simple per-channel statistics used downstream."""
+    arr = _ensure_image_array(inp, node_kind="structural-descriptor")
+    means = arr.mean(axis=(1, 2))
+    stds = arr.std(axis=(1, 2))
+    maxima = arr.max(axis=(1, 2))
+    minima = arr.min(axis=(1, 2))
+    return {
+        "shape": tuple(int(v) for v in arr.shape),
+        "channel_stats": {
+            "mean": means.tolist(),
+            "std": stds.tolist(),
+            "max": maxima.tolist(),
+            "min": minima.tolist(),
+        },
+    }
+
+def _fn_simulation(inp: NodeInput, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate a toy simulation summary derived from the input image tensor."""
+    arr = _ensure_image_array(inp, node_kind="simulation")
+    sim_type = str(params.get("simulationType", "generic"))
+    steps = int(params.get("steps", 10))
+    steps = max(1, min(steps, 256))
+    # Compress the tensor into a deterministic 1D profile
+    profile = arr.mean(axis=0).mean(axis=0)
+    lin = np.linspace(0, 1, steps, dtype=np.float32)
+    series = (profile.mean() * np.sin(2 * np.pi * lin)).tolist()
+    return {
+        "simulationType": sim_type,
+        "steps": steps,
+        "series": series,
+        "energy": float(arr.sum()),
+    }
+
+def _fn_figure(inp: NodeInput, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Wrap descriptor-like payloads into a figure specification."""
+    if not isinstance(inp, dict):
+        raise PipelineError("figure node expects a descriptor dictionary input")
+    title = params.get("title", "Generated Figure")
+    subtitle = params.get("subtitle", "Auto summary")
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "data": inp,
+    }
+
+def _fn_text(inp: NodeInput, params: Dict[str, Any]) -> str:
+    """Aggregate upstream payloads into a printable log entry."""
+    entries = inp if isinstance(inp, list) else [inp]
+    serialized: List[str] = []
+    for entry in entries:
+        if isinstance(entry, (dict, list)):
+            serialized.append(json.dumps(entry, sort_keys=True))
+        else:
+            serialized.append(str(entry))
+    prefix = params.get("prefix", "LOG")
+    return f"{prefix}: " + " | ".join(serialized)
 
 
 # ================================
@@ -100,8 +191,11 @@ REGISTRY: Dict[str, NodeType] = {
     "dataset": NodeType("dataset", _fn_dataset, min_inputs=0, max_inputs=0),
     "concat": NodeType("concat", _fn_concat, min_inputs=2, max_inputs=None),
     "segmentation": NodeType("segmentation", _fn_segmentation, min_inputs=1, max_inputs=1),
+    "filter": NodeType("filter", _fn_filter, min_inputs=1, max_inputs=1),
     "structural-descriptor": NodeType("structural-descriptor", _fn_structural_descriptor, min_inputs=1, max_inputs=1),
     "simulation": NodeType("simulation", _fn_simulation, min_inputs=1, max_inputs=1),
+    "figure": NodeType("figure", _fn_figure, min_inputs=1, max_inputs=1),
+    "text": NodeType("text", _fn_text, min_inputs=1, max_inputs=None),
 }
 
 
@@ -196,6 +290,8 @@ def execute_simplified_graph(
     *,
     strategy: Literal["kahn", "dfs"] = "kahn",
     registry: Dict[str, NodeType] = REGISTRY,
+    verbose: bool = False,
+    observer: Optional[ObserverFn] = None,
 ) -> ExecutionResult:
     """
     Build a DiGraph from a simplified spec, validate and execute it.
@@ -267,24 +363,30 @@ def execute_simplified_graph(
         raise PipelineError("Graph has no terminal (sink) nodes.")
 
     # ---- Choose topological order ----
+    if verbose:
+        print(
+            f"[DAG] executing pipeline nodes={len(G)} edges={G.number_of_edges()} "
+            f"strategy={strategy}"
+        )
+
     if strategy == "kahn":
         order = list(nx.topological_sort(G))  # Kahn-like breadth-y behavior
         strategy_label = "breadth-first topological (Kahn)"
     elif strategy == "dfs":
         # Reverse postorder of DFS over all components gives a valid topo order in a DAG
-        order = []
+        postorder: List[str] = []
         seen: set = set()
         for src in sources:
             for n in nx.dfs_postorder_nodes(G, source=src):
                 if n not in seen:
                     seen.add(n)
-                    order.append(n)
+                    postorder.append(n)
         # Include any isolated/remaining nodes not reachable from listed sources
         for n in nx.dfs_postorder_nodes(G):
             if n not in seen:
                 seen.add(n)
-                order.append(n)
-        order = order  # already postorder collection
+                postorder.append(n)
+        order = list(reversed(postorder))
         strategy_label = "depth-first topological (DFS postorder)"
     else:
         raise PipelineError(f"Unknown execution strategy: {strategy}")
@@ -310,7 +412,16 @@ def execute_simplified_graph(
             node_input = [outputs[p] for p in preds]
         # arity already checked, but do a final assert before call
         node.node_type.validate_arity(len(preds), nid)
+        start = perf_counter()
         outputs[nid] = node.node_type.fn(node_input, node.params)
+        duration = perf_counter() - start
+        if verbose:
+            print(
+                f"[DAG] node={nid} kind={node.node_type.kind} "
+                f"inputs={len(preds)} duration={duration * 1000:.3f}ms"
+            )
+        if observer:
+            observer(nid, node, node_input, outputs[nid], duration, preds)
 
     return ExecutionResult(
         graph=G,
