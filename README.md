@@ -1,6 +1,10 @@
-# Visual Pipeline Dashboard (React Flow + Vite)
+<p align="center">
+  <img src="https://seeklogo.com/images/R/rainbow-six-siege-zofia-icon-logo-1EA6B6159E-seeklogo.com.png" alt="Zofia logo" width="150" />
+</p>
 
-Interactive visual pipeline dashboard built with React Flow and Vite. It provides a polished UI for assembling, validating, and executing pipelines with a glassy look-and-feel, dark mode, and useful productivity touches.
+# Zofia - workflow executor
+
+Codename **Zofia** (named after the Rainbow Six Siege operator), this interactive visual pipeline dashboard is built with React Flow and Vite. It provides a polished UI for assembling, validating, and executing pipelines with a glassy look-and-feel, dark mode, and useful productivity touches.
 
 ## Features
 

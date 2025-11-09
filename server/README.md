@@ -1,6 +1,10 @@
-## Alger WebSocket Server
+<p align="center">
+  <img src="https://seeklogo.com/images/R/rainbow-six-siege-zofia-icon-logo-1EA6B6159E-seeklogo.com.png" alt="Zofia logo" width="140" />
+</p>
 
-This folder hosts a standalone WebSocket server that speaks the custom **Alger** protocol required by the dashboard project and provides a reproducible reference for pipeline execution, logging, and auditability.
+## Zofia Server
+
+Zofia—named after the Rainbow Six Siege operator—is the codename for this standalone WebSocket server that speaks the custom **Alger** protocol required by the dashboard project and provides a reproducible reference for pipeline execution, logging, and auditability.
 
 ### Layout
 
