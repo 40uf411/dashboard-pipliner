@@ -5,8 +5,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import sys
 import unittest
+from pathlib import Path
 from typing import Tuple
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from websockets import connect
 
@@ -16,6 +22,7 @@ import server as alger_server
 class AlgerServerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         alger_server.reset_server_state()
+        self._load_default_graph_into_db()
         self.stop_event = asyncio.Event()
         self.server_task = asyncio.create_task(
             alger_server.run_server(stop_event=self.stop_event)
@@ -150,6 +157,65 @@ class AlgerServerTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response["type"], alger_server.CODE_PIPELINE_FINISHED_OK)
             self.assertEqual(response["content"]["executionId"], execution_id)
+            self.assertIn("sinks", response["content"]["content"])
+            self.assertTrue(response["content"]["content"]["sinks"])
+
+    async def test_execution_persisted_in_database(self) -> None:
+        async with await self._connect() as websocket:
+            response, next_id = await self._exchange(
+                websocket,
+                message_id=1,
+                type_code=100,
+                content={"username": "admin", "password": "admin"},
+            )
+            self.assertEqual(response["type"], alger_server.CODE_LOGIN_OK)
+
+            response, next_id = await self._exchange(
+                websocket,
+                message_id=next_id,
+                type_code=103,
+                content={"pipelineId": "demo"},
+            )
+            execution_id = response["content"]["executionId"]
+
+            response, _ = await self._exchange(
+                websocket,
+                message_id=next_id,
+                type_code=107,
+                content={"executionId": execution_id},
+            )
+            self.assertEqual(response["type"], alger_server.CODE_PIPELINE_FINISHED_OK)
+
+        stored_execution = alger_server.DATABASE.get_execution(execution_id)
+        self.assertIsNotNone(stored_execution)
+        assert stored_execution is not None  # For type checkers.
+        self.assertEqual(stored_execution["status"], "finished")
+        self.assertEqual(
+            stored_execution["output"]["file"],
+            f"{execution_id}.json",
+        )
+        summary = json.loads(stored_execution["output"]["content"])
+        self.assertIn("sinks", summary)
+        self.assertEqual(alger_server.DATABASE.count_active_executions(), 0)
+
+    @staticmethod
+    def _load_default_graph_into_db() -> None:
+        dag_path = Path(__file__).with_name("test_DAG.json")
+        graph_definition = json.loads(dag_path.read_text())
+        pipeline_payload = graph_definition.get("pipeline", {})
+        alger_server.DATABASE.upsert_pipeline(
+            {
+                "id": "demo",
+                "name": pipeline_payload.get("name", "Demo Pipeline"),
+                "full_graph": graph_definition,
+                "description": pipeline_payload.get("name"),
+                "metadata": {
+                    "source": dag_path.name,
+                    "originalPipelineId": pipeline_payload.get("id"),
+                    "kind": graph_definition.get("kind"),
+                },
+            }
+        )
 
 
 if __name__ == "__main__":

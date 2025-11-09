@@ -29,3 +29,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# server persistence artifacts
+server/sqlite_db/*.sqlite3
+server/sqlite_db/*.db

@@ -5,15 +5,20 @@ from __future__ import annotations
 import json
 import os
 import statistics
+import sys
 import unittest
 from collections import defaultdict
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Tuple
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 import numpy as np
 
-from DAG import (
+from app.dag import (
     ExecutionResult,
     execute_simplified_graph,
     simplify_reactflow_json,
