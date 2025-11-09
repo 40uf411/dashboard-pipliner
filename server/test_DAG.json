@@ -1,0 +1,313 @@
+{
+  "kind": "visual-pipeline-board",
+  "version": 1,
+  "exportedAt": "2025-11-08T23:35:11.194Z",
+  "pipeline": {
+    "id": "pl-1762644911194",
+    "name": "Current pipeline",
+    "createdAt": "2025-11-08T23:35:11.194Z",
+    "updatedAt": "2025-11-08T23:35:11.194Z",
+    "nodes": [
+      {
+        "id": "in-a",
+        "type": "card",
+        "position": {
+          "x": 0,
+          "y": 20
+        },
+        "data": {
+          "title": "Input",
+          "subtitle": "Dataset A",
+          "body": "Source dataset",
+          "color": "green",
+          "targets": 0,
+          "sources": 1,
+          "templateKey": "input-dataset",
+          "kind": "dataset",
+          "params": {
+            "sourceType": "file",
+            "datasetFormat": "PNG/JPEG",
+            "phase": "binary",
+            "maxSamples": 100
+          }
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 172,
+        "height": 190
+      },
+      {
+        "id": "in-b",
+        "type": "card",
+        "position": {
+          "x": 0,
+          "y": 170
+        },
+        "data": {
+          "title": "Input",
+          "subtitle": "Dataset B",
+          "body": "Source dataset",
+          "color": "green",
+          "targets": 0,
+          "sources": 1,
+          "templateKey": "input-dataset",
+          "kind": "dataset",
+          "params": {
+            "sourceType": "file",
+            "datasetFormat": "PNG/JPEG",
+            "phase": "binary",
+            "maxSamples": 100
+          }
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 172,
+        "height": 190
+      },
+      {
+        "id": "concat",
+        "type": "card",
+        "position": {
+          "x": 240,
+          "y": 95
+        },
+        "data": {
+          "title": "Processing",
+          "subtitle": "Concat",
+          "body": "Combine inputs",
+          "color": "violet",
+          "targets": 2,
+          "sources": 1,
+          "templateKey": "processing-concat",
+          "kind": "concat",
+          "params": {}
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 172,
+        "height": 75
+      },
+      {
+        "id": "seg",
+        "type": "card",
+        "position": {
+          "x": 480,
+          "y": 95
+        },
+        "data": {
+          "title": "Processing",
+          "subtitle": "Segmentation",
+          "body": "Image segmentation",
+          "color": "violet",
+          "targets": 1,
+          "sources": 1,
+          "templateKey": "processing-segmentation",
+          "kind": "segmentation",
+          "params": {
+            "method": "otsu",
+            "expDefinition": ""
+          }
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 174,
+        "height": 104
+      },
+      {
+        "id": "filter",
+        "type": "card",
+        "position": {
+          "x": 720,
+          "y": 95
+        },
+        "data": {
+          "title": "Processing",
+          "subtitle": "Filter",
+          "body": "Signal filtering",
+          "color": "violet",
+          "targets": 1,
+          "sources": 1,
+          "templateKey": "processing-filter",
+          "kind": "filter",
+          "params": {
+            "filterType": "mean",
+            "kernelSize": 3,
+            "kernelValues": ""
+          }
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 172,
+        "height": 132
+      },
+      {
+        "id": "desc",
+        "type": "card",
+        "position": {
+          "x": 960,
+          "y": 20
+        },
+        "data": {
+          "title": "Analytics",
+          "subtitle": "Structural Descriptor",
+          "body": "Compute descriptors",
+          "color": "red",
+          "targets": 1,
+          "sources": 1,
+          "templateKey": "analytics-structural",
+          "kind": "structural-descriptor",
+          "params": {
+            "metrics": [
+              "lineal_path",
+              "connectivity"
+            ],
+            "pixelValues": [
+              0,
+              1
+            ],
+            "directions": [
+              "X"
+            ],
+            "lagDistance": 5,
+            "step": 1
+          }
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 235,
+        "height": 219
+      },
+      {
+        "id": "sim",
+        "type": "card",
+        "position": {
+          "x": 960,
+          "y": 170
+        },
+        "data": {
+          "title": "Analytics",
+          "subtitle": "Simulation",
+          "body": "Run simulations",
+          "color": "red",
+          "targets": 1,
+          "sources": 1,
+          "templateKey": "analytics-simulation",
+          "kind": "simulation",
+          "params": {
+            "simulationType": "Diffusivity"
+          }
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 177,
+        "height": 104
+      },
+      {
+        "id": "fig",
+        "type": "card",
+        "position": {
+          "x": 1200,
+          "y": 0
+        },
+        "data": {
+          "title": "Output",
+          "subtitle": "Figure Vis",
+          "body": "Visualize results",
+          "color": "azure",
+          "targets": 1,
+          "sources": 0,
+          "templateKey": "output-figure",
+          "kind": "figure",
+          "params": {}
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 172,
+        "height": 75
+      },
+      {
+        "id": "log",
+        "type": "card",
+        "position": {
+          "x": 1200,
+          "y": 80
+        },
+        "data": {
+          "title": "Output",
+          "subtitle": "Text Log",
+          "body": "Console/log output",
+          "color": "azure",
+          "targets": 1,
+          "sources": 0,
+          "templateKey": "output-log",
+          "kind": "text",
+          "params": {}
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "width": 172,
+        "height": 75
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-in-a-concat",
+        "source": "in-a",
+        "target": "concat"
+      },
+      {
+        "id": "e-in-b-concat",
+        "source": "in-b",
+        "target": "concat"
+      },
+      {
+        "id": "e-concat-seg",
+        "source": "concat",
+        "target": "seg"
+      },
+      {
+        "id": "e-seg-filter",
+        "source": "seg",
+        "target": "filter"
+      },
+      {
+        "id": "e-filter-desc",
+        "source": "filter",
+        "target": "desc"
+      },
+      {
+        "id": "e-filter-sim",
+        "source": "filter",
+        "target": "sim"
+      },
+      {
+        "id": "e-desc-fig",
+        "source": "desc",
+        "target": "fig"
+      },
+      {
+        "id": "e-desc-log",
+        "source": "desc",
+        "target": "log"
+      },
+      {
+        "id": "e-sim-log",
+        "source": "sim",
+        "target": "log"
+      }
+    ],
+    "idSeq": 1000,
+    "preview": "data:image/png;base64,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ECBRbIoIECBAQIC4AwQIECAQJSBAotgUESBAgIAAcQcIECBAIEpAgESxKSJAgAABAeIOECBAgECUgACJYlNEgAABAgLEHSBAgACBKAEBEsWmiAABAgQEiDtAgAABAlECAiSKTREBAgQICBB3gAABAgSiBARIFJsiAgQIEBAg7gABAgQIRAkIkCg2RQQIECAgQNwBAgQIEIgSECBRbIoIECBAQIC4AwQIECAQJSBAotgUESBAgIAAcQcIECBAIEpAgESxKSJAgAABAeIOECBAgECUgACJYlNEgAABAgLEHSBAgACBKAEBEsWmiAABAgQEiDtAgAABAlECAiSKTREBAgQICBB3gAABAgSiBARIFJsiAgQIEBAg7gABAgQIRAkIkCg2RQQIECAgQNwBAgQIEIgSECBRbIoIECBAQIC4AwQIECAQJSBAotgUESBAgIAAcQcIECBAIEpAgESxKSJAgAABAeIOECBAgECUgACJYlNEgAABAgLEHSBAgACBKAEBEsWmiAABAgQEiDtAgAABAlECAiSKTREBAgQICBB3gAABAgSiBKYqQN6s7nZ/1I4VESBAgEBeBLqqGzk7ZjPlavpcF1OohgABAgQaW0CANPb8nZ4AAQLRAgIkmk4hAQIEGltAgDT2/J2eAAEC0QICJJpOIQECBBpbQIA09vydngABAtECAiSaTiEBAgQaW0CANPb8nZ4AAQLRAgIkmk4hAQIEGltAgDT2/J2eAAEC0QICJJpOIQECBBpbQIA09vydngABAtECAiSaTiEBAgQaW0CANPb8nZ4AAQLRAgIkmk4hAQIEGltAgDT2/J2eAAEC0QICJJpOIQECBBpbQIA09vydngABAtECAiSaTiEBAgQaW0CANPb8nZ4AAQLRAgIkmk4hAQIEGltAgDT2/J2eAAEC0QICJJpOIQECBBpbQIA09vydngABAtECAiSaTiEBAgQaW0CANPb8nZ4AAQLRAv8BWW8Dayz7V0wAAAAASUVORK5CYII=",
+    "meta": {
+      "isDark": false,
+      "zoom": 100,
+      "interactive": true,
+      "server": {
+        "host": "localhost",
+        "user": "",
+        "password": "",
+        "connected": false
+      }
+    }
+  }
+}
