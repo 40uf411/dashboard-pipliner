@@ -4,7 +4,7 @@
 
 ## Zofia Server
 
-Zofia—named after the Rainbow Six Siege operator—is the codename for this standalone WebSocket server that speaks the custom **Alger** protocol required by the dashboard project and provides a reproducible reference for pipeline execution, logging, and auditability.
+Zofia—Zero-Ops Framework for Intelligent Automation, named after the Rainbow Six Siege operator—is the codename for this standalone WebSocket server that speaks the custom **Alger** protocol required by the dashboard project and provides a reproducible reference for pipeline execution, logging, and auditability.
 
 ### Layout
 
