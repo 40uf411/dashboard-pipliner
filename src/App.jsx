@@ -44,15 +44,20 @@ const RESPONSE_PIPELINE_FINISHED_OK = 207
 const RESPONSE_EXECUTE_ERROR = 304
 const RESPONSE_STATUS_ERROR = 305
 const RESPONSE_PIPELINE_FINISHED_ERROR = 307
+const INPUT_HANDLE_FALLBACK = '__single'
 
-const makeNode = (id, templateKey, position, overrides = {}) => ({
-  id,
-  type: 'card',
-  position,
-  data: createNodeData(templateKey, overrides),
-  sourcePosition: 'right',
-  targetPosition: 'left',
-})
+const normaliseSingleInputLinks = (edges = []) => {
+  const seen = new Set()
+  return (Array.isArray(edges) ? edges : []).filter((edge) => {
+    if (!edge || !edge.target) return true
+    const handleKey = `${edge.target}:${edge.targetHandle ?? INPUT_HANDLE_FALLBACK}`
+    if (seen.has(handleKey)) {
+      return false
+    }
+    seen.add(handleKey)
+    return true
+  })
+}
 
 const canEditNode = (node) => {
   if (!node) return false
@@ -69,40 +74,8 @@ const canEditNode = (node) => {
   return Boolean(template.editable)
 }
 
-const initialNodes = [
-  // Input nodes (green) — no input, one output
-  makeNode('in-a', 'input-dataset', { x: 0, y: 20 }, { subtitle: 'Dataset A' }),
-  makeNode('in-b', 'input-dataset', { x: 0, y: 170 }, { subtitle: 'Dataset B' }),
-
-  // Processing nodes (violet)
-  makeNode('concat', 'processing-concat', { x: 240, y: 95 }),
-  makeNode('seg', 'processing-segmentation', { x: 480, y: 95 }),
-  makeNode('filter', 'processing-filter', { x: 720, y: 95 }),
-
-  // Analytics nodes (red)
-  makeNode('desc', 'analytics-structural', { x: 960, y: 20 }),
-  makeNode('sim', 'analytics-simulation', { x: 960, y: 170 }),
-
-  // Output nodes (azure) — one input, no output
-  makeNode('fig', 'output-figure', { x: 1200, y: 0 }),
-  makeNode('log', 'output-log', { x: 1200, y: 80 }),
-]
-
-const initialEdges = [
-  // inputs to concat
-  { id: 'e-in-a-concat', source: 'in-a', target: 'concat' },
-  { id: 'e-in-b-concat', source: 'in-b', target: 'concat' },
-  // processing chain
-  { id: 'e-concat-seg', source: 'concat', target: 'seg' },
-  { id: 'e-seg-filter', source: 'seg', target: 'filter' },
-  // branch to analytics
-  { id: 'e-filter-desc', source: 'filter', target: 'desc' },
-  { id: 'e-filter-sim', source: 'filter', target: 'sim' },
-  // outputs
-  { id: 'e-desc-fig', source: 'desc', target: 'fig' },
-  { id: 'e-desc-log', source: 'desc', target: 'log' },
-  { id: 'e-sim-log', source: 'sim', target: 'log' },
-]
+const initialNodes = []
+const initialEdges = []
 
 function App() {
   const [nodes, setNodes, applyNodesChanges] = useNodesState(initialNodes)
@@ -345,14 +318,37 @@ function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [menu.open, activeDock])
 
-  const onConnect = useCallback((params) => {
-    if (executionLocked) {
-      addToast('Cannot edit the graph while executing.', 'error')
-      return
-    }
-    setCurrentPipelineId(null)
-    setEdges((eds) => addEdge(params, eds))
-  }, [executionLocked, addToast])
+  const onConnect = useCallback(
+    (params) => {
+      if (executionLocked) {
+        addToast('Cannot edit the graph while executing.', 'error')
+        return
+      }
+      const targetId = params?.target
+      const targetHandle = params?.targetHandle ?? INPUT_HANDLE_FALLBACK
+      let blocked = false
+      setEdges((eds) => {
+        if (targetId) {
+          const hasConflict = eds.some(
+            (edge) =>
+              edge.target === targetId &&
+              (edge.targetHandle ?? INPUT_HANDLE_FALLBACK) === targetHandle
+          )
+          if (hasConflict) {
+            blocked = true
+            return eds
+          }
+        }
+        return addEdge(params, eds)
+      })
+      if (blocked) {
+        addToast('Each input can accept only one connection.', 'error', 3200)
+        return
+      }
+      setCurrentPipelineId(null)
+    },
+    [executionLocked, addToast]
+  )
 
   const toggleDock = (tab) => {
     setActiveDock((cur) => (cur === tab ? null : tab))
@@ -367,11 +363,13 @@ function App() {
     }))
 
   const cloneEdges = (list) =>
-    (Array.isArray(list) ? list : []).map((edge) => ({
-      ...edge,
-      data: edge?.data ? JSON.parse(JSON.stringify(edge.data)) : edge.data,
-      style: edge?.style ? { ...edge.style } : edge.style,
-    }))
+    normaliseSingleInputLinks(
+      (Array.isArray(list) ? list : []).map((edge) => ({
+        ...edge,
+        data: edge?.data ? JSON.parse(JSON.stringify(edge.data)) : edge.data,
+        style: edge?.style ? { ...edge.style } : edge.style,
+      }))
+    )
 
   const buildPipelineSnapshot = ({ id, name, createdAt } = {}) => {
     const timestamp = new Date().toISOString()
@@ -1671,6 +1669,46 @@ function App() {
               setEditingNode(menu.node)
             }
             setMenu({ open: false, x: 0, y: 0, node: null })
+          }}
+          onDuplicate={() => {
+            if (!menu.node) return
+            if (executionLocked) {
+              addToast('Cannot duplicate while executing.', 'error')
+              return
+            }
+            const templateKey = menu.node?.data?.templateKey
+            if (!templateKey) {
+              addToast('Only templated nodes can be duplicated.', 'error')
+              return
+            }
+            const template = getNodeTemplate(templateKey)
+            if (!template) {
+              addToast('Template not found for this node.', 'error')
+              return
+            }
+            const newId = `n-${idSeq + 1}`
+            setIdSeq((v) => v + 1)
+            const origin = menu.node.position || { x: 0, y: 0 }
+            const offset = { x: origin.x + 30, y: origin.y + 30 }
+            const clonedData = {
+              ...menu.node.data,
+              alert: undefined,
+            }
+            setNodes((nds) => [
+              ...nds,
+              {
+                ...menu.node,
+                id: newId,
+                position: offset,
+                data: {
+                  ...clonedData,
+                  // ensure params are cloned deeply
+                  params: clonedData.params ? JSON.parse(JSON.stringify(clonedData.params)) : {},
+                },
+              },
+            ])
+            setCurrentPipelineId(null)
+            addToast('Node duplicated.', 'success', 2000)
           }}
           onDelete={() => {
             const id = menu.node.id

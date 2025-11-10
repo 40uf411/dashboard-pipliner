@@ -40,11 +40,11 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
 
   const targetNode = node || cachedNode
 
-  if (!shouldRender || !targetNode) return null
-
   const templateKey = targetNode?.data?.templateKey
   const template = templateKey ? getNodeTemplate(templateKey) : null
-  const structured = Boolean(template && template.editable && Array.isArray(template.fields) && template.fields.length)
+  const structured = Boolean(
+    template && template.editable && Array.isArray(template.fields) && template.fields.length
+  )
 
   const initialTitle = targetNode?.data?.title ?? ''
   const [title, setTitle] = useState(initialTitle)
@@ -57,7 +57,9 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
   }, [structured, template, targetNode])
 
   const [formValues, setFormValues] = useState(initialStructured)
-  const [entries, setEntries] = useState(() => (!structured ? toEntries(targetNode?.data?.params) : []))
+  const [entries, setEntries] = useState(() =>
+    structured ? [] : toEntries(targetNode?.data?.params)
+  )
 
   useEffect(() => setTitle(initialTitle), [initialTitle])
 
@@ -356,6 +358,8 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
       Configure attributes for the {template.subtitle || template.title || 'node'} type.
     </div>
   ) : null
+
+  if (!shouldRender || !targetNode) return null
 
   const fallbackHasParams = entries.length > 0
   const transitionState = isLeaving ? 'modal-leaving' : 'modal-entering'

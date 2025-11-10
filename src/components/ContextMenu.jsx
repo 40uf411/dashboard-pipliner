@@ -1,10 +1,25 @@
 import { FaRegEdit } from 'react-icons/fa'
 import { MdDeleteOutline } from 'react-icons/md'
+import { IoDuplicateOutline } from 'react-icons/io5'
 
-export default function ContextMenu({ x, y, onEdit, onDelete, onClose, canEdit = true }) {
+export default function ContextMenu({
+  x,
+  y,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  onClose,
+  canEdit = true,
+}) {
   const handleEdit = () => {
     if (!canEdit) return
     onEdit && onEdit()
+    onClose && onClose()
+  }
+
+  const handleDuplicate = () => {
+    if (!canEdit) return
+    onDuplicate && onDuplicate()
     onClose && onClose()
   }
 
@@ -36,6 +51,23 @@ export default function ContextMenu({ x, y, onEdit, onDelete, onClose, canEdit =
           <FaRegEdit size={16} />
         </span>
         <span>Edit</span>
+      </div>
+      <div
+        className={`context-item${canEdit ? '' : ' disabled'}`}
+        role="button"
+        tabIndex={canEdit ? 0 : -1}
+        onClick={handleDuplicate}
+        onKeyDown={(e) => {
+          if (!canEdit) return
+          if (e.key === 'Enter' || e.key === ' ') handleDuplicate()
+        }}
+        aria-label="Duplicate node"
+        aria-disabled={!canEdit}
+      >
+        <span className="context-icon">
+          <IoDuplicateOutline size={17} />
+        </span>
+        <span>Duplicate</span>
       </div>
       <div
         className="context-item danger"
