@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict
+from concurrent.futures import Future
+from typing import Any, Callable, Dict, Optional
 
 from websockets import ConnectionClosed
 from websockets.exceptions import InvalidHandshake
@@ -104,6 +105,73 @@ def _log_message(conversation_id: str | None, direction: str, payload: Dict[str,
     )
 
 
+class MessageDispatcher:
+    """Serialize outgoing frames and keep protocol ids in sync."""
+
+    def __init__(self, websocket: WebSocketServerProtocol, conversation_id: str | None) -> None:
+        self._websocket = websocket
+        self._conversation_id = conversation_id
+        self.last_message_id = 0
+        self._lock = asyncio.Lock()
+
+    async def send(self, *, type_code: int, request_id: int, content: Dict[str, Any]) -> AlgerMessage:
+        async with self._lock:
+            message_id = self.last_message_id + 1
+            response = build_status_response(
+                message_id=message_id,
+                request_id=request_id,
+                type_code=type_code,
+                content=content,
+            )
+            await self._websocket.send(response.to_json())
+            _log_message(
+                self._conversation_id,
+                "outgoing",
+                {
+                    "id": response.message_id,
+                    "requestId": response.request_id,
+                    "type": response.type_code,
+                    "status_code": response.type_code,
+                    "body": {"content": response.content},
+                },
+            )
+            self.last_message_id = message_id
+            return response
+
+
+def _monitor_async_result(fut: asyncio.Future[Any] | Future, label: str) -> None:
+    def _done(result_future: asyncio.Future[Any] | Future) -> None:
+        try:
+            result_future.result()
+        except Exception as exc:
+            LOGGER.error("%s failed: %s", label, exc)
+
+    fut.add_done_callback(_done)
+
+
+def _create_status_callback(
+    dispatcher: "MessageDispatcher",
+    loop: asyncio.AbstractEventLoop,
+) -> Callable[[int, Dict[str, Any], int], None]:
+    def _callback(type_code: int, payload: Dict[str, Any], request_id: int) -> None:
+        async def _send() -> None:
+            await dispatcher.send(type_code=type_code, request_id=request_id, content=payload)
+
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is loop:
+            task = loop.create_task(_send())
+            _monitor_async_result(task, "status-update")
+        else:
+            future = asyncio.run_coroutine_threadsafe(_send(), loop)
+            _monitor_async_result(future, "status-update")
+
+    return _callback
+
+
 async def alger_handler(websocket: WebSocketServerProtocol) -> None:
     """Handle each WebSocket client adhering to Alger protocol."""
     connection_id: str | None = None
@@ -165,7 +233,9 @@ async def alger_handler(websocket: WebSocketServerProtocol) -> None:
         websocket.remote_address,
     )
 
-    last_message_id = 0
+    dispatcher = MessageDispatcher(websocket, conversation_id)
+    loop = asyncio.get_running_loop()
+    context.status_callback = _create_status_callback(dispatcher, loop)
 
     try:
         while True:
@@ -179,25 +249,10 @@ async def alger_handler(websocket: WebSocketServerProtocol) -> None:
                 message = AlgerMessage.parse(raw_message, error_code=CODE_UNKNOWN_TYPE)
             except ProtocolError as exc:
                 LOGGER.error("Protocol violation: %s", exc)
-                error_response = build_status_response(
-                    message_id=last_message_id + 1,
-                    request_id=0,
+                await dispatcher.send(
                     type_code=exc.error_code,
+                    request_id=0,
                     content={"error": str(exc)},
-                )
-                await websocket.send(error_response.to_json())
-                last_message_id += 1
-                _log_message(
-                    conversation_id,
-                    "outgoing",
-                    {
-                        "id": error_response.message_id,
-                        "requestId": error_response.request_id,
-                        "type": error_response.type_code,
-                        "status_code": error_response.type_code,
-                        "body": {"content": error_response.content},
-                        "error": str(exc),
-                    },
                 )
                 continue
 
@@ -212,7 +267,7 @@ async def alger_handler(websocket: WebSocketServerProtocol) -> None:
                 },
             )
 
-            expected_id = last_message_id + 1
+            expected_id = dispatcher.last_message_id + 1
             if message.message_id != expected_id:
                 LOGGER.warning(
                     "Incorrect message id. Expected %s, got %s",
@@ -224,56 +279,32 @@ async def alger_handler(websocket: WebSocketServerProtocol) -> None:
                     "expectedId": expected_id,
                     "receivedId": message.message_id,
                 }
-                error_response = build_status_response(
-                    message_id=expected_id,
-                    request_id=message.message_id,
+                await dispatcher.send(
                     type_code=CODE_MESSAGE_ID_ERROR,
+                    request_id=message.message_id,
                     content=error_payload,
                 )
-                await websocket.send(error_response.to_json())
-                _log_message(
-                    conversation_id,
-                    "outgoing",
-                    {
-                        "id": error_response.message_id,
-                        "requestId": error_response.request_id,
-                        "type": error_response.type_code,
-                        "status_code": error_response.type_code,
-                        "body": {"content": error_response.content},
-                        "error": error_payload["error"],
-                    },
-                )
-                last_message_id = expected_id
                 continue
 
-            last_message_id = message.message_id
-
+            post_send = None
             try:
-                response_type, response_content = route_message(message, context)
+                response_type, response_content, post_send = route_message(message, context)
             except ProtocolError as exc:
                 response_type = exc.error_code
                 response_content = {"error": str(exc)}
 
-            response = build_status_response(
-                message_id=last_message_id + 1,
-                request_id=message.message_id,
+            await dispatcher.send(
                 type_code=response_type,
+                request_id=message.message_id,
                 content=response_content,
             )
-            await websocket.send(response.to_json())
-            _log_message(
-                conversation_id,
-                "outgoing",
-                {
-                    "id": response.message_id,
-                    "requestId": response.request_id,
-                    "type": response.type_code,
-                    "status_code": response.type_code,
-                    "body": {"content": response.content},
-                },
-            )
-            last_message_id = response.message_id
+
+            if post_send is not None:
+                task = asyncio.create_task(post_send)
+                _monitor_async_result(task, f"post-send-{context.connection_id}")
     finally:
+        if context:
+            context.status_callback = None
         if conversation_id:
             DATABASE.close_conversation(conversation_id)
         if connection_id:

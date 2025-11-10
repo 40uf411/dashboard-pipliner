@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, Callable, Dict, Tuple
+from time import perf_counter
+from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
 
 from .dag import PipelineError
 from .persistence import SQLitePersistenceGateway
@@ -21,6 +23,8 @@ from .codes import (
     CODE_PIPELINE_FINISHED_OK,
     CODE_PIPELINE_FULL,
     CODE_PIPELINE_FULL_ERROR,
+    CODE_STATUS_UPDATE_ERROR,
+    CODE_STATUS_UPDATE_OK,
     CODE_STOP_EXECUTION_ERROR,
     CODE_STOP_EXECUTION_OK,
     CODE_TOO_MANY_EXECUTIONS,
@@ -42,11 +46,18 @@ SERVER_STATE: Dict[str, Any] = default_server_state()
 LOGGER = logging.getLogger("alger-server")
 
 
+HandlerResult = Tuple[int, Dict[str, Any], Optional[Coroutine[Any, Any, None]]]
+
+
 def _log(level: int, context: RequestContext, message: str, *args: Any) -> None:
     if context and context.log_label:
         LOGGER.log(level, "%s " + message, context.log_label, *args)
     else:
         LOGGER.log(level, message, *args)
+
+
+def _result(code: int, content: Dict[str, Any], post: Optional[Coroutine[Any, Any, None]] = None) -> HandlerResult:
+    return code, content, post
 
 
 def reset_server_state() -> None:
@@ -55,20 +66,20 @@ def reset_server_state() -> None:
     DATABASE.reset()
 
 
-def _execution_blocker() -> Tuple[int, Dict[str, Any]] | None:
+def _execution_blocker() -> HandlerResult | None:
     if SERVER_STATE["maintenance_mode"]:
-        return (
+        return _result(
             CODE_MAINTENANCE_MODE,
             {"error": "Pipelines unavailable while maintenance mode is active."},
         )
     if SERVER_STATE["executions_halted"]:
-        return (
+        return _result(
             CODE_EXECUTIONS_HALTED,
             {"error": "Pipeline executions are halted."},
         )
     active_count = DATABASE.count_active_executions()
     if active_count >= SERVER_STATE["max_concurrent_executions"]:
-        return (
+        return _result(
             CODE_TOO_MANY_EXECUTIONS,
             {
                 "error": "Too many pipeline execution requests in progress.",
@@ -96,16 +107,16 @@ def handle_login(message, context):
             "login",
             {"messageId": message.message_id},
         )
-        return CODE_LOGIN_OK, {"status": "login-ok"}
-    return CODE_LOGIN_UNKNOWN, {"error": "unknown credentials or password mismatch"}
+        return _result(CODE_LOGIN_OK, {"status": "login-ok"})
+    return _result(CODE_LOGIN_UNKNOWN, {"error": "unknown credentials or password mismatch"})
 
 
 def handle_get_user_data(message, context):
     user_id = message.content.get("userId")
     if not user_id:
-        return CODE_USER_DATA_ERROR, {"error": "userId is required"}
+        return _result(CODE_USER_DATA_ERROR, {"error": "userId is required"})
     if str(user_id) != context.username:
-        return CODE_USER_DATA_ERROR, {"error": f"user '{user_id}' not found"}
+        return _result(CODE_USER_DATA_ERROR, {"error": f"user '{user_id}' not found"})
 
     user = DATABASE.ensure_user(
         context.username,
@@ -128,31 +139,31 @@ def handle_get_user_data(message, context):
         "get_user_data",
         {"messageId": message.message_id},
     )
-    return CODE_USER_DATA, {"user": profile}
+    return _result(CODE_USER_DATA, {"user": profile})
 
 
 def handle_full_pipeline(message, context):
     dataset = DATABASE.list_pipelines()
     if not dataset:
-        return CODE_PIPELINE_FULL_ERROR, {"error": "no pipeline data available"}
+        return _result(CODE_PIPELINE_FULL_ERROR, {"error": "no pipeline data available"})
     DATABASE.record_user_action(
         context.user_id,
         "list_pipelines",
         {"messageId": message.message_id, "pipelineCount": len(dataset)},
     )
-    return CODE_PIPELINE_FULL, {"pipelines": dataset}
+    return _result(CODE_PIPELINE_FULL, {"pipelines": dataset})
 
 
 def handle_execute_from_db(message, context):
     pipeline_id = message.content.get("pipelineId")
     if not pipeline_id:
-        return CODE_EXECUTION_FROM_DB_ERROR, {"error": "pipelineId is required"}
+        return _result(CODE_EXECUTION_FROM_DB_ERROR, {"error": "pipelineId is required"})
     pipeline = DATABASE.get_pipeline(pipeline_id)
     if not pipeline:
-        return CODE_EXECUTION_FROM_DB_ERROR, {"error": "pipeline not found"}
+        return _result(CODE_EXECUTION_FROM_DB_ERROR, {"error": "pipeline not found"})
     graph_payload = pipeline.get("full_graph")
     if not graph_payload:
-        return CODE_EXECUTION_FROM_DB_ERROR, {"error": "pipeline graph missing"}
+        return _result(CODE_EXECUTION_FROM_DB_ERROR, {"error": "pipeline graph missing"})
 
     _log(logging.INFO, context, "Pipeline '%s' requested from DB", pipeline_id)
     blocker = _execution_blocker()
@@ -175,20 +186,27 @@ def handle_execute_from_db(message, context):
         execution["id"],
         pipeline_id,
     )
-    return _run_and_finalize_execution(
+    execution_coro = _run_and_finalize_execution(
         message=message,
         context=context,
         execution_id=execution["id"],
         graph_payload=graph_payload,
-        success_code=CODE_EXECUTION_FROM_DB_OK,
-        failure_code=CODE_EXECUTION_FROM_DB_ERROR,
+        pipeline_id=pipeline_id,
+    )
+    return _result(
+        CODE_EXECUTION_FROM_DB_OK,
+        {
+            "executionId": execution["id"],
+            "status": "pipeline-execution-started",
+        },
+        execution_coro,
     )
 
 
 def handle_execute_from_payload(message, context):
     graph = message.content.get("graph")
     if not graph:
-        return CODE_EXECUTION_FROM_PAYLOAD_ERROR, {"error": "graph definition missing"}
+        return _result(CODE_EXECUTION_FROM_PAYLOAD_ERROR, {"error": "graph definition missing"})
 
     _log(logging.INFO, context, "Ad-hoc payload execution requested")
     blocker = _execution_blocker()
@@ -210,25 +228,34 @@ def handle_execute_from_payload(message, context):
         "Execution %s (payload) created; starting DAG run",
         execution["id"],
     )
-    return _run_and_finalize_execution(
+    execution_coro = _run_and_finalize_execution(
         message=message,
         context=context,
         execution_id=execution["id"],
         graph_payload=graph,
-        success_code=CODE_EXECUTION_FROM_PAYLOAD_OK,
-        failure_code=CODE_EXECUTION_FROM_PAYLOAD_ERROR,
+        pipeline_id=None,
+    )
+    return _result(
+        CODE_EXECUTION_FROM_PAYLOAD_OK,
+        {
+            "executionId": execution["id"],
+            "status": "pipeline-execution-started",
+        },
+        execution_coro,
     )
 
 
-def _run_and_finalize_execution(
+NODE_EXECUTION_DELAY_RANGE = (0.1, 0.35)
+
+
+async def _run_and_finalize_execution(
     *,
     message,
     context,
     execution_id: str,
     graph_payload: Dict[str, Any],
-    success_code: int,
-    failure_code: int,
-):
+    pipeline_id: Optional[str],
+) -> None:
     strategy = message.content.get("strategy", "kahn")
     _log(
         logging.INFO,
@@ -237,8 +264,48 @@ def _run_and_finalize_execution(
         execution_id,
         strategy,
     )
+    status_callback = context.status_callback
+    request_id = message.message_id
+    started_at = perf_counter()
+    order_position = {"value": 0}
+
+    def _emit_node_status(error: Exception | None, node_id: str, node_kind: str, duration: float, predecessors: list[str]) -> None:
+        if not status_callback:
+            return
+        order_position["value"] += 1
+        payload = {
+            "executionId": execution_id,
+            "nodeId": node_id,
+            "nodeKind": node_kind,
+            "status": "error" if error else "success",
+            "durationMs": round(duration * 1000, 3),
+            "predecessors": predecessors,
+            "order": order_position["value"],
+        }
+        if pipeline_id:
+            payload["pipelineId"] = pipeline_id
+        if error:
+            payload["error"] = str(error)
+        try:
+            status_callback(
+                CODE_STATUS_UPDATE_ERROR if error else CODE_STATUS_UPDATE_OK,
+                payload,
+                request_id,
+            )
+        except Exception:
+            LOGGER.exception("Failed to emit status update for execution %s", execution_id)
+
+    def observer(node_id, node, _node_input, _node_output, duration, predecessors, error) -> None:
+        _emit_node_status(error, node_id, node.node_type.kind, duration, predecessors)
+
     try:
-        _, summary = run_graph(graph_payload, strategy=strategy)
+        _, summary = await asyncio.to_thread(
+            run_graph,
+            graph_payload,
+            strategy=strategy,
+            observer=observer,
+            simulate_delay_range=NODE_EXECUTION_DELAY_RANGE,
+        )
     except PipelineError as exc:
         DATABASE.update_execution_status(
             execution_id,
@@ -252,7 +319,7 @@ def _run_and_finalize_execution(
             type_code=message.type_code,
             severity="pipeline",
             message=str(exc),
-            payload={"pipelineId": message.content.get("pipelineId"), "strategy": strategy},
+            payload={"pipelineId": pipeline_id, "strategy": strategy},
         )
         _log(
             logging.ERROR,
@@ -261,7 +328,41 @@ def _run_and_finalize_execution(
             execution_id,
             exc,
         )
-        return failure_code, {"error": str(exc)}
+        if status_callback:
+            status_callback(
+                CODE_PIPELINE_FINISHED_ERROR,
+                {
+                    "executionId": execution_id,
+                    "status": "error",
+                    "error": str(exc),
+                    "durationMs": round((perf_counter() - started_at) * 1000, 3),
+                    "strategy": strategy,
+                    "pipelineId": pipeline_id,
+                },
+                request_id,
+            )
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.exception("Unexpected DAG failure for execution %s", execution_id)
+        DATABASE.update_execution_status(
+            execution_id,
+            status="failed",
+            output={"file": f"{execution_id}-error.json", "content": encode_summary({"error": str(exc)})},
+        )
+        if status_callback:
+            status_callback(
+                CODE_PIPELINE_FINISHED_ERROR,
+                {
+                    "executionId": execution_id,
+                    "status": "error",
+                    "error": str(exc),
+                    "durationMs": round((perf_counter() - started_at) * 1000, 3),
+                    "strategy": strategy,
+                    "pipelineId": pipeline_id,
+                },
+                request_id,
+            )
+        return
 
     DATABASE.update_execution_status(
         execution_id,
@@ -281,7 +382,7 @@ def _run_and_finalize_execution(
             "messageId": message.message_id,
             "executionId": execution_id,
             "strategy": strategy,
-            "pipelineId": message.content.get("pipelineId"),
+            "pipelineId": pipeline_id,
         },
     )
     _log(
@@ -290,20 +391,29 @@ def _run_and_finalize_execution(
         "Execution %s finished successfully",
         execution_id,
     )
-    return success_code, {
-        "executionId": execution_id,
-        "status": "pipeline-execution-started",
-    }
+    if status_callback:
+        status_callback(
+            CODE_PIPELINE_FINISHED_OK,
+            {
+                "executionId": execution_id,
+                "status": "success",
+                "summary": summary,
+                "durationMs": round((perf_counter() - started_at) * 1000, 3),
+                "strategy": strategy,
+                "pipelineId": pipeline_id,
+            },
+            request_id,
+        )
 
 
 def handle_stop_execution(message, context):
     execution_id = message.content.get("executionId")
     if not execution_id:
-        return CODE_STOP_EXECUTION_ERROR, {"error": "executionId is required"}
+        return _result(CODE_STOP_EXECUTION_ERROR, {"error": "executionId is required"})
 
     execution = DATABASE.get_execution(execution_id)
     if not execution:
-        return CODE_STOP_EXECUTION_ERROR, {"error": "execution not found"}
+        return _result(CODE_STOP_EXECUTION_ERROR, {"error": "execution not found"})
 
     DATABASE.update_execution_status(execution_id, status="stopped")
     DATABASE.record_user_action(
@@ -312,24 +422,30 @@ def handle_stop_execution(message, context):
         {"executionId": execution_id, "messageId": message.message_id},
     )
     _log(logging.WARNING, context, "Execution %s stopped by client", execution_id)
-    return CODE_STOP_EXECUTION_OK, {
-        "executionId": execution_id,
-        "status": "stopped",
-    }
+    return _result(
+        CODE_STOP_EXECUTION_OK,
+        {
+            "executionId": execution_id,
+            "status": "stopped",
+        },
+    )
 
 
 def handle_request_output(message, context):
     execution_id = message.content.get("executionId")
     if not execution_id:
-        return CODE_PIPELINE_FINISHED_ERROR, {"error": "executionId is required"}
+        return _result(CODE_PIPELINE_FINISHED_ERROR, {"error": "executionId is required"})
 
     execution = DATABASE.get_execution(execution_id)
     if not execution:
-        return CODE_PIPELINE_FINISHED_ERROR, {"error": "execution not found"}
+        return _result(CODE_PIPELINE_FINISHED_ERROR, {"error": "execution not found"})
 
-    if execution.get("status") == "running":
-        DATABASE.update_execution_status(execution_id, status="finished")
-        execution = DATABASE.get_execution(execution_id) or execution
+    status = execution.get("status")
+    if status == "running":
+        return _result(
+            CODE_PIPELINE_FINISHED_ERROR,
+            {"error": f"execution '{execution_id}' is still running"},
+        )
 
     DATABASE.record_user_action(
         context.user_id,
@@ -342,16 +458,34 @@ def handle_request_output(message, context):
         context,
         "Fetched output for execution %s (status=%s)",
         execution_id,
-        execution.get("status"),
+        status,
     )
-    return CODE_PIPELINE_FINISHED_OK, {
-        "executionId": execution_id,
-        "file": execution["output"]["file"],
-        "content": decoded_content,
-    }
+    if status == "failed":
+        return _result(
+            CODE_PIPELINE_FINISHED_ERROR,
+            {
+                "executionId": execution_id,
+                "status": status,
+                "file": execution["output"]["file"],
+                "content": decoded_content,
+            },
+        )
+    if status != "finished":
+        return _result(
+            CODE_PIPELINE_FINISHED_ERROR,
+            {"error": f"execution '{execution_id}' is not available (status={status})"},
+        )
+    return _result(
+        CODE_PIPELINE_FINISHED_OK,
+        {
+            "executionId": execution_id,
+            "file": execution["output"]["file"],
+            "content": decoded_content,
+        },
+    )
 
 
-Handler = Callable[[Any, RequestContext], Tuple[int, Dict[str, Any]]]
+Handler = Callable[[Any, RequestContext], HandlerResult]
 
 MESSAGE_HANDLERS: Dict[int, Handler] = {
     100: handle_login,
@@ -364,7 +498,7 @@ MESSAGE_HANDLERS: Dict[int, Handler] = {
 }
 
 
-def route_message(message, context):
+def route_message(message, context) -> HandlerResult:
     if message.type_code not in REQUEST_TYPES:
         from .protocol import ProtocolError
         raise ProtocolError(

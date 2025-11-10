@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import dataclass
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import networkx as nx
@@ -23,7 +24,7 @@ NodeInput = Union[None, Any, List[Any]]
 NodeOutput = Any
 NodeFn = Callable[[NodeInput, Dict[str, Any]], NodeOutput]
 ObserverFn = Callable[
-    [str, "Node", NodeInput, NodeOutput, float, List[str]],
+    [str, "Node", NodeInput, Optional[NodeOutput], float, List[str], Optional[Exception]],
     None,
 ]
 
@@ -292,6 +293,7 @@ def execute_simplified_graph(
     registry: Dict[str, NodeType] = REGISTRY,
     verbose: bool = False,
     observer: Optional[ObserverFn] = None,
+    simulate_delay_range: Optional[Tuple[float, float]] = None,
 ) -> ExecutionResult:
     """
     Build a DiGraph from a simplified spec, validate and execute it.
@@ -312,6 +314,7 @@ def execute_simplified_graph(
         - None if it has 0 predecessors
         - the single predecessor's output if it has 1 predecessor
         - a list of predecessor outputs if >1 predecessors
+    - optional synthetic delays prior to node execution (simulate_delay_range)
     """
     # ---- Build graph ----
     G = nx.DiGraph()
@@ -400,6 +403,15 @@ def execute_simplified_graph(
         node_objs[nid] = Node(node_id=nid, node_type=registry[k], params=p)
 
     outputs: Dict[str, Any] = {}
+    delay_range: Optional[Tuple[float, float]] = None
+    if simulate_delay_range:
+        lo, hi = simulate_delay_range
+        if lo < 0:
+            lo = 0.0
+        if hi < lo:
+            hi = lo
+        delay_range = (lo, hi)
+
     for nid in order:
         preds = list(G.predecessors(nid))
         node = node_objs[nid]
@@ -412,16 +424,32 @@ def execute_simplified_graph(
             node_input = [outputs[p] for p in preds]
         # arity already checked, but do a final assert before call
         node.node_type.validate_arity(len(preds), nid)
+        if delay_range:
+            sleep(random.uniform(*delay_range))
         start = perf_counter()
-        outputs[nid] = node.node_type.fn(node_input, node.params)
-        duration = perf_counter() - start
-        if verbose:
-            print(
-                f"[DAG] node={nid} kind={node.node_type.kind} "
-                f"inputs={len(preds)} duration={duration * 1000:.3f}ms"
-            )
-        if observer:
-            observer(nid, node, node_input, outputs[nid], duration, preds)
+        node_output: Any | None = None
+        duration: float = 0.0
+        try:
+            node_output = node.node_type.fn(node_input, node.params)
+            outputs[nid] = node_output
+            duration = perf_counter() - start
+            if verbose:
+                print(
+                    f"[DAG] node={nid} kind={node.node_type.kind} "
+                    f"inputs={len(preds)} duration={duration * 1000:.3f}ms"
+                )
+            if observer:
+                observer(nid, node, node_input, node_output, duration, preds, None)
+        except Exception as exc:
+            duration = perf_counter() - start
+            if verbose:
+                print(
+                    f"[DAG] node={nid} kind={node.node_type.kind} failed "
+                    f"after {duration * 1000:.3f}ms: {exc}"
+                )
+            if observer:
+                observer(nid, node, node_input, None, duration, preds, exc)
+            raise
 
     return ExecutionResult(
         graph=G,

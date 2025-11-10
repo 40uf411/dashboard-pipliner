@@ -34,6 +34,7 @@ function BottomBar({
   onDownloadPipeline,
   onUploadPipeline,
   onOpenSettings,
+  runDisabled = false,
 }) {
   // keep slider value within bounds
   const clampedZoom = useMemo(() => Math.min(150, Math.max(50, Math.round(zoom))), [zoom])
@@ -86,6 +87,7 @@ function BottomBar({
   const showTimer = executing || !!execResult || !!timerStartRef.current
 
   const onRunClick = () => {
+    if (runDisabled) return
     // Prime timer immediately on click for snappy start
     timerStartRef.current = Date.now()
     setElapsedMs(0)
@@ -115,6 +117,15 @@ function BottomBar({
     showLabels ? '' : 'labels-hidden',
   ].filter(Boolean).join(' ')
 
+  const runButtonClasses = [
+    'bar-btn',
+    'run',
+    executing ? 'active' : '',
+    runDisabled ? 'disabled' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
     <div className={barClasses}>
       {showTimer && (
@@ -138,16 +149,26 @@ function BottomBar({
 
       <div className="bar-item" title="Run pipeline">
         <div
-          className={`bar-btn run${executing ? ' active' : ''}`}
+          className={runButtonClasses}
           role="button"
-          tabIndex={0}
+          tabIndex={runDisabled ? -1 : 0}
           onClick={onRunClick}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onRunClick()}
+          onKeyDown={(e) => {
+            if (runDisabled) return
+            if (e.key === 'Enter' || e.key === ' ') onRunClick()
+          }}
           aria-label="Run pipeline"
+          aria-disabled={runDisabled}
         >
           {executing ? <FaStop size={14} /> : <FaPlay size={14} />}
         </div>
-        <span style={{ color: executing ? '#60a5fa' : 'var(--muted-text)', fontSize: '0.85rem' }}>
+        <span
+          style={{
+            color: executing ? '#60a5fa' : 'var(--muted-text)',
+            fontSize: '0.85rem',
+            opacity: runDisabled && !executing ? 0.7 : 1,
+          }}
+        >
           {executing ? 'Executing…' : 'Run'}
         </span>
       </div>

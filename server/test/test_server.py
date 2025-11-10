@@ -69,15 +69,51 @@ class AlgerServerTests(unittest.IsolatedAsyncioTestCase):
             "content": json.dumps(content),
         }
         await websocket.send(json.dumps(payload))
-        raw_response = await websocket.recv()
-        response = json.loads(raw_response)
-        if isinstance(response.get("content"), str):
-            try:
-                response["content"] = json.loads(response["content"])
-            except json.JSONDecodeError:
-                response["content"] = {}
-        next_message_id = response["id"] + 1
-        return response, next_message_id
+        last_seen_id = None
+        while True:
+            raw_response = await websocket.recv()
+            response = json.loads(raw_response)
+            if isinstance(response.get("content"), str):
+                try:
+                    response["content"] = json.loads(response["content"])
+                except json.JSONDecodeError:
+                    response["content"] = {}
+            last_seen_id = response["id"]
+            if response.get("requestId") != message_id:
+                continue
+            next_message_id = (last_seen_id or 0) + 1
+            return response, next_message_id
+
+    async def _await_pipeline_completion(
+        self,
+        websocket,
+        pipeline_request_id: int,
+    ) -> Tuple[dict, int, list[dict]]:
+        """Consume streamed status updates until the pipeline finishes."""
+        status_updates: list[dict] = []
+        last_seen_id: int = 0
+        while True:
+            raw_frame = await websocket.recv()
+            frame = json.loads(raw_frame)
+            if isinstance(frame.get("content"), str):
+                try:
+                    frame["content"] = json.loads(frame["content"])
+                except json.JSONDecodeError:
+                    frame["content"] = {}
+            last_seen_id = frame["id"]
+            if frame.get("requestId") != pipeline_request_id:
+                continue
+            if frame["type"] in (
+                alger_server.CODE_STATUS_UPDATE_OK,
+                alger_server.CODE_STATUS_UPDATE_ERROR,
+            ):
+                status_updates.append(frame)
+                continue
+            if frame["type"] in (
+                alger_server.CODE_PIPELINE_FINISHED_OK,
+                alger_server.CODE_PIPELINE_FINISHED_ERROR,
+            ):
+                return frame, last_seen_id + 1, status_updates
 
     async def test_login_success(self) -> None:
         async with await self._connect() as websocket:
@@ -89,7 +125,7 @@ class AlgerServerTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response["type"], alger_server.CODE_LOGIN_OK)
             self.assertEqual(response["requestId"], 1)
-            self.assertEqual(next_id, 3)
+            self.assertEqual(next_id, 2)
 
             response, _ = await self._exchange(
                 websocket,
@@ -150,14 +186,22 @@ class AlgerServerTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response["type"], alger_server.CODE_LOGIN_OK)
 
+            pipeline_message_id = next_id
             response, next_id = await self._exchange(
                 websocket,
-                message_id=next_id,
+                message_id=pipeline_message_id,
                 type_code=103,
                 content={"pipelineId": "demo"},
             )
             self.assertEqual(response["type"], alger_server.CODE_EXECUTION_FROM_DB_OK)
             execution_id = response["content"]["executionId"]
+
+            final_frame, next_id, status_updates = await self._await_pipeline_completion(
+                websocket,
+                pipeline_request_id=pipeline_message_id,
+            )
+            self.assertEqual(final_frame["type"], alger_server.CODE_PIPELINE_FINISHED_OK)
+            self.assertGreater(len(status_updates), 0)
 
             response, _ = await self._exchange(
                 websocket,
@@ -180,13 +224,19 @@ class AlgerServerTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response["type"], alger_server.CODE_LOGIN_OK)
 
+            pipeline_message_id = next_id
             response, next_id = await self._exchange(
                 websocket,
-                message_id=next_id,
+                message_id=pipeline_message_id,
                 type_code=103,
                 content={"pipelineId": "demo"},
             )
             execution_id = response["content"]["executionId"]
+
+            _, next_id, _ = await self._await_pipeline_completion(
+                websocket,
+                pipeline_request_id=pipeline_message_id,
+            )
 
             response, _ = await self._exchange(
                 websocket,

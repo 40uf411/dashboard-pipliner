@@ -25,6 +25,7 @@ import {
   slugify,
   persistPipelines,
   deletePipeline,
+  createBoardEnvelope,
 } from './utils/pipelineStorage.js'
 import SettingsOverlay from './components/SettingsOverlay.jsx'
 import { buildAlgerWebSocketURL, describeAlgerFrame } from './utils/algerClient.js'
@@ -36,6 +37,13 @@ const SERVER_SETTINGS_KEY = 'visual-pipeline-dashboard:server-settings'
 const REQUEST_PIPELINES_TYPE = 102
 const RESPONSE_PIPELINES_OK = 202
 const RESPONSE_PIPELINES_ERROR = 302
+const REQUEST_EXECUTE_FROM_PAYLOAD = 104
+const RESPONSE_EXECUTE_OK = 204
+const RESPONSE_STATUS_OK = 205
+const RESPONSE_PIPELINE_FINISHED_OK = 207
+const RESPONSE_EXECUTE_ERROR = 304
+const RESPONSE_STATUS_ERROR = 305
+const RESPONSE_PIPELINE_FINISHED_ERROR = 307
 
 const makeNode = (id, templateKey, position, overrides = {}) => ({
   id,
@@ -111,6 +119,7 @@ function App() {
   const [issueCount, setIssueCount] = useState(0)
   const [executing, setExecuting] = useState(false)
   const [execResult, setExecResult] = useState(null) // 'success' | 'error' | null
+  const [activeExecution, setActiveExecution] = useState(null)
   const [toasts, setToasts] = useState([])
   const [compact, setCompact] = useState(false)
   const [paneMenu, setPaneMenu] = useState({ open: false, x: 0, y: 0 })
@@ -130,11 +139,13 @@ function App() {
   const [connectingServer, setConnectingServer] = useState(false)
   const [syncingPipelines, setSyncingPipelines] = useState(false)
   const [serverConversation, setServerConversation] = useState([])
+  const executionLocked = executing || Boolean(activeExecution)
   const fileInputRef = useRef(null)
   const serverSettingsInitialisedRef = useRef(false)
   const serverSocketRef = useRef(null)
   const serverSequenceRef = useRef(0)
   const pipelineSyncRequestRef = useRef(null)
+  const pipelineExecutionRef = useRef(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -188,6 +199,7 @@ function App() {
       }
       serverSequenceRef.current = 0
       pipelineSyncRequestRef.current = null
+      pipelineExecutionRef.current = null
     }
   }, [])
 
@@ -278,12 +290,12 @@ function App() {
   )
 
   const requestClearDashboard = useCallback(() => {
-    if (executing) {
+    if (executionLocked) {
       addToast('Cannot clear while executing.', 'error')
       return
     }
     setConfirmClear(true)
-  }, [executing, addToast])
+  }, [executionLocked, addToast])
 
   const requestClearSavedPipelines = useCallback(() => {
     if (savedPipelines.length === 0) {
@@ -334,13 +346,13 @@ function App() {
   }, [menu.open, activeDock])
 
   const onConnect = useCallback((params) => {
-    if (executing) {
+    if (executionLocked) {
       addToast('Cannot edit the graph while executing.', 'error')
       return
     }
     setCurrentPipelineId(null)
     setEdges((eds) => addEdge(params, eds))
-  }, [executing, addToast])
+  }, [executionLocked, addToast])
 
   const toggleDock = (tab) => {
     setActiveDock((cur) => (cur === tab ? null : tab))
@@ -391,13 +403,124 @@ function App() {
     }
   }
 
+  const updateActiveExecution = useCallback((next) => {
+    pipelineExecutionRef.current = next
+    setActiveExecution(next)
+  }, [])
+
+  const resetNodeStatuses = useCallback(() => {
+    setNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        className: undefined,
+        data: { ...n.data, alert: undefined },
+      }))
+    )
+  }, [setNodes])
+
+  const setEdgesAnimated = useCallback(
+    (animated) => {
+      setEdges((eds) =>
+        eds.map((edge) => (edge.animated === animated ? edge : { ...edge, animated }))
+      )
+    },
+    [setEdges]
+  )
+
+  const markNodesRunning = useCallback(() => {
+    setNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        className: 'rf-node-running',
+        data: { ...n.data, alert: undefined },
+      }))
+    )
+  }, [setNodes])
+
+  const applyNodeExecutionStatus = useCallback(
+    (nodeId, status, info = {}) => {
+      if (!nodeId) return
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n
+          let className = n.className
+          if (status === 'success') className = 'rf-node-ok'
+          else if (status === 'error') className = 'rf-node-bad'
+          else if (status === 'running') className = 'rf-node-running'
+          const hasDuration = typeof info.durationMs === 'number'
+          const alertMessage =
+            info.message ||
+            (status === 'success'
+              ? hasDuration
+                ? `Completed in ${info.durationMs.toFixed(1)}ms`
+                : 'Completed'
+              : status === 'error'
+                ? info.error || 'Execution error'
+                : undefined)
+          const alert =
+            alertMessage && status
+              ? {
+                  color: status === 'error' ? 'red' : status === 'success' ? 'green' : 'orange',
+                  message: alertMessage,
+                }
+              : undefined
+          return {
+            ...n,
+            className,
+            data: {
+              ...n.data,
+              alert,
+            },
+          }
+        })
+      )
+    },
+    [setNodes]
+  )
+
+  const finalizeNodeStatuses = useCallback(
+    (outcome, message) => {
+      setNodes((nds) =>
+        nds.map((n) => {
+          let className = n.className
+          if (outcome === 'success' && className !== 'rf-node-bad') {
+            className = 'rf-node-ok'
+          } else if (outcome === 'error' && className !== 'rf-node-bad') {
+            className = 'rf-node-bad'
+          }
+          const preserveAlert =
+            (outcome === 'error' && n.className === 'rf-node-bad' && n.data?.alert) ||
+            (outcome === 'success' && n.data?.alert)
+          const alert =
+            preserveAlert || !outcome
+              ? n.data?.alert
+              : {
+                  color: outcome === 'success' ? 'green' : 'red',
+                  message:
+                    message ||
+                    (outcome === 'success' ? 'Execution completed' : 'Execution failed'),
+                }
+          return {
+            ...n,
+            className,
+            data: {
+              ...n.data,
+              alert,
+            },
+          }
+        })
+      )
+    },
+    [setNodes]
+  )
+
   const openPipelinesDock = () => {
     setActiveDock('pipelines')
     setPaneMenu({ open: false, x: 0, y: 0 })
   }
 
   const handleSavePipeline = (nameOverride) => {
-    if (executing) {
+    if (executionLocked) {
       addToast('Cannot save while execution is in progress.', 'error')
       return
     }
@@ -518,7 +641,7 @@ function App() {
       addToast('Saved pipeline not found.', 'error')
       return
     }
-    if (executing) {
+    if (executionLocked) {
       addToast('Cannot load while execution is in progress.', 'error')
       return
     }
@@ -823,12 +946,19 @@ function App() {
     serverSequenceRef.current = 0
     pipelineSyncRequestRef.current = null
     setSyncingPipelines(false)
+    if (pipelineExecutionRef.current) {
+      setChecking(false)
+      setExecuting(false)
+      setExecResult('error')
+      setEdgesAnimated(false)
+      updateActiveExecution(null)
+    }
     appendServerConversation({
       source: 'server',
       message: 'session closed locally',
     })
     addToast('Disconnected from remote server.', 'info', 2200)
-  }, [serverConnected, appendServerConversation, addToast])
+  }, [serverConnected, appendServerConversation, addToast, setEdgesAnimated, updateActiveExecution])
 
   const handleServerConnect = useCallback(() => {
     if (connectingServer || serverConnected) return
@@ -900,6 +1030,82 @@ function App() {
           setSyncingPipelines(false)
           const errorMessage = content?.error || 'Server could not provide pipelines.'
           addToast(errorMessage, 'error', 3600)
+        } else if (
+          pipelineExecutionRef.current &&
+          requestId &&
+          requestId === pipelineExecutionRef.current.requestId
+        ) {
+          if (typeCode === RESPONSE_EXECUTE_OK) {
+            const executionId = content?.executionId
+            updateActiveExecution({
+              ...pipelineExecutionRef.current,
+              executionId,
+            })
+            setChecking(false)
+            setExecuting(true)
+            setExecResult(null)
+            markNodesRunning()
+            setEdgesAnimated(true)
+            addToast('Pipeline execution started on the server.', 'success', 2600)
+            return
+          }
+          if (typeCode === RESPONSE_EXECUTE_ERROR) {
+            updateActiveExecution(null)
+            setChecking(false)
+            setExecuting(false)
+            setExecResult('error')
+            setEdgesAnimated(false)
+            resetNodeStatuses()
+            addToast(content?.error || 'Pipeline execution could not start.', 'error', 3600)
+            return
+          }
+          if (typeCode === RESPONSE_STATUS_OK || typeCode === RESPONSE_STATUS_ERROR) {
+            const nodeId = content?.nodeId || content?.node_id
+            const durationMsRaw = content?.durationMs ?? content?.duration_ms
+            const durationMs =
+              typeof durationMsRaw === 'number' ? durationMsRaw : undefined
+            const status = typeCode === RESPONSE_STATUS_ERROR ? 'error' : 'success'
+            const hasDuration = typeof durationMs === 'number'
+            const info = {
+              durationMs,
+              message:
+                status === 'error'
+                  ? content?.error || content?.message
+                  : hasDuration
+                    ? `Completed in ${durationMs.toFixed(1)}ms`
+                    : 'Completed',
+              error: content?.error,
+            }
+            applyNodeExecutionStatus(nodeId, status, info)
+            if (status === 'error' && content?.nodeKind) {
+              addToast(
+                `${content.nodeKind} failed: ${content?.error || 'Unknown error'}`,
+                'error',
+                3600
+              )
+            }
+            return
+          }
+          if (typeCode === RESPONSE_PIPELINE_FINISHED_OK) {
+            setExecuting(false)
+            setChecking(false)
+            setExecResult('success')
+            setEdgesAnimated(false)
+            finalizeNodeStatuses('success', 'Pipeline completed')
+            updateActiveExecution(null)
+            addToast('Pipeline execution finished successfully.', 'success', 3200)
+            return
+          }
+          if (typeCode === RESPONSE_PIPELINE_FINISHED_ERROR) {
+            setExecuting(false)
+            setChecking(false)
+            setExecResult('error')
+            setEdgesAnimated(false)
+            finalizeNodeStatuses('error', content?.error)
+            updateActiveExecution(null)
+            addToast(content?.error || 'Pipeline execution failed.', 'error', 3600)
+            return
+          }
         }
       }
 
@@ -913,19 +1119,26 @@ function App() {
       const handleClose = (event) => {
         if (serverSocketRef.current === socket) {
           serverSocketRef.current = null
-        }
-        setConnectingServer(false)
-        setServerConnected(false)
-        serverSequenceRef.current = 0
-        if (pipelineSyncRequestRef.current) {
-          pipelineSyncRequestRef.current = null
-          setSyncingPipelines(false)
-        }
-        const reason = event.reason || `code ${event.code || 'unknown'}`
-        appendServerConversation({
-          source: 'server',
-          message: `session closed (${reason})`,
-        })
+      }
+      setConnectingServer(false)
+      setServerConnected(false)
+      serverSequenceRef.current = 0
+      if (pipelineSyncRequestRef.current) {
+        pipelineSyncRequestRef.current = null
+        setSyncingPipelines(false)
+      }
+      if (pipelineExecutionRef.current) {
+        setChecking(false)
+        setExecuting(false)
+        setEdgesAnimated(false)
+        setExecResult('error')
+        updateActiveExecution(null)
+      }
+      const reason = event.reason || `code ${event.code || 'unknown'}`
+      appendServerConversation({
+        source: 'server',
+        message: `session closed (${reason})`,
+      })
         const cleanClose = event.code === 1000 || event.code === 1001
         addToast(
           cleanClose ? 'Disconnected from remote server.' : `Server connection closed (${event.code || 'error'})`,
@@ -954,6 +1167,84 @@ function App() {
     parseAlgerContent,
     normaliseServerPipeline,
     applySyncedPipelines,
+    markNodesRunning,
+    setEdgesAnimated,
+    resetNodeStatuses,
+    applyNodeExecutionStatus,
+    finalizeNodeStatuses,
+    updateActiveExecution,
+  ])
+
+  const requestPipelineExecution = useCallback(() => {
+    if (!serverConnected) {
+      addToast('Connect to a remote server before running the pipeline.', 'error', 3600)
+      return
+    }
+    if (connectingServer) {
+      addToast('Still connecting to the server. Please wait.', 'info', 3000)
+      return
+    }
+    if (activeExecution) {
+      addToast('A pipeline execution is already in progress.', 'info', 2600)
+      return
+    }
+    const socket = serverSocketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      addToast('Server connection is not open.', 'error', 3600)
+      return
+    }
+    const snapshot = buildPipelineSnapshot()
+    if (!snapshot || !Array.isArray(snapshot.nodes) || snapshot.nodes.length === 0) {
+      addToast('Pipeline graph is empty.', 'error', 3200)
+      return
+    }
+    const envelope = createBoardEnvelope(snapshot)
+    if (!envelope) {
+      addToast('Unable to serialise the pipeline graph.', 'error', 3200)
+      return
+    }
+    try {
+      setExecResult(null)
+      setChecking(true)
+      setExecuting(false)
+      resetNodeStatuses()
+      setEdgesAnimated(false)
+      setMenu({ open: false, x: 0, y: 0, node: null })
+      setPaneMenu({ open: false, x: 0, y: 0 })
+      setActiveDock(null)
+      const requestId = sendServerMessage(
+        REQUEST_EXECUTE_FROM_PAYLOAD,
+        {
+          pipelineId: snapshot.id,
+          graph: envelope,
+          params: snapshot.meta?.params || {},
+          strategy: 'kahn',
+        },
+        `? execute pipeline "${snapshot.name}"`
+      )
+      updateActiveExecution({
+        requestId,
+        pipelineId: snapshot.id,
+        pipelineName: snapshot.name,
+        executionId: null,
+      })
+      addToast('Pipeline execution requested.', 'info', 2400)
+    } catch (err) {
+      console.error(err)
+      setChecking(false)
+      updateActiveExecution(null)
+      addToast(err?.message || 'Unable to send execution request.', 'error', 3600)
+    }
+  }, [
+    serverConnected,
+    connectingServer,
+    activeExecution,
+    addToast,
+    buildPipelineSnapshot,
+    sendServerMessage,
+    resetNodeStatuses,
+    setEdgesAnimated,
+    updateActiveExecution,
   ])
 
   const handleToggleServerConnection = () => {
@@ -1104,7 +1395,7 @@ function App() {
   }, [nodes, edges, isDark, zoomPct, rfInstance])
 
   const addNodeOf = (key, position) => {
-    if (executing) {
+    if (executionLocked) {
       addToast('Cannot add nodes while executing.', 'error')
       return
     }
@@ -1142,7 +1433,7 @@ function App() {
   }
 
   const toggleCheck = () => {
-    if (executing) {
+    if (executionLocked) {
       addToast('Cannot check while executing.', 'error')
       return
     }
@@ -1241,14 +1532,14 @@ function App() {
         }}
         onNodeContextMenu={(e, node) => {
           e.preventDefault()
-          if (executing) {
+          if (executionLocked) {
             addToast('Cannot edit the graph while executing.', 'error')
           } else {
             setMenu({ open: true, x: e.clientX, y: e.clientY, node })
           }
         }}
         onNodeDoubleClick={(_, node) => {
-          if (executing) {
+          if (executionLocked) {
             addToast('Cannot edit nodes while executing.', 'error')
           } else if (!canEditNode(node)) {
             addToast('This node has no editable attributes.', 'info')
@@ -1257,12 +1548,12 @@ function App() {
           }
         }}
         onDragOver={(event) => {
-          if (executing) return
+          if (executionLocked) return
           event.preventDefault()
           if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
         }}
         onDrop={(event) => {
-          if (executing) return
+          if (executionLocked) return
           event.preventDefault()
           const key = event.dataTransfer?.getData('application/reactflow')
           if (!key || !rfInstance) return
@@ -1270,13 +1561,13 @@ function App() {
           const position = rfInstance.project({ x: event.clientX - bounds.left, y: event.clientY - bounds.top })
           addNodeOf(key, position)
         }}
-        nodesDraggable={interactive && !executing}
-        nodesConnectable={interactive && !executing}
-        elementsSelectable={interactive && !executing}
-        panOnDrag={interactive && !executing}
-        zoomOnScroll={interactive && !executing}
-        zoomOnPinch={interactive && !executing}
-        selectionOnDrag={interactive && !executing}
+        nodesDraggable={interactive && !executionLocked}
+        nodesConnectable={interactive && !executionLocked}
+        elementsSelectable={interactive && !executionLocked}
+        panOnDrag={interactive && !executionLocked}
+        zoomOnScroll={interactive && !executionLocked}
+        zoomOnPinch={interactive && !executionLocked}
+        selectionOnDrag={interactive && !executionLocked}
         defaultEdgeOptions={{ type: 'smoothstep' }}
         nodeTypes={nodeTypes}
         fitView
@@ -1351,7 +1642,7 @@ function App() {
           x={paneMenu.x}
           y={paneMenu.y}
           onAddNode={() => {
-            if (executing) addToast('Cannot add nodes while executing.', 'error')
+            if (executionLocked) addToast('Cannot add nodes while executing.', 'error')
             setActiveDock('nodes')
           }}
           onResetNodes={() => {
@@ -1444,71 +1735,8 @@ function App() {
           onDownloadPipeline={handleDownloadPipeline}
           onUploadPipeline={handleUploadPipeline}
           onOpenSettings={openSettings}
-          onRun={async () => {
-            if (executing) return
-            setExecResult(null)
-            setExecuting(true)
-          // reset node statuses and alerts at the start of a run
-          setNodes((nds) => nds.map((n) => ({ ...n, className: undefined, data: { ...n.data, alert: undefined } })))
-          // animate edges
-          setEdges((eds) => eds.map((e) => ({ ...e, animated: true })))
-          // helper to set node class by ids
-          const setStatus = (ids, status) => {
-            setNodes((nds) => nds.map((n) => (ids.includes(n.id) ? { ...n, className: status === 'running' ? 'rf-node-running' : status === 'success' ? 'rf-node-ok' : 'rf-node-bad' } : n)))
-          }
-          const getByTitle = (title) => nodes.filter((n) => n.data?.title === title).map((n) => n.id)
-          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
-          try {
-            // Inputs
-            let stage = getByTitle('Input')
-            setStatus(stage, 'running')
-            await sleep(700)
-            setStatus(stage, 'success')
-            await sleep(200)
-            // Processing
-            stage = getByTitle('Processing')
-            if (stage.length) {
-              // randomly fail one processing node with 50% chance
-              const fail = Math.random() < 0.5
-              const failId = fail ? stage[Math.floor(Math.random() * stage.length)] : null
-              setStatus(stage, 'running')
-              await sleep(900)
-              if (failId) {
-                setStatus([failId], 'error')
-                setExecResult('error')
-                addToast('Execution stopped: a processing node failed.', 'error')
-                // stop edges animation
-                setEdges((eds) => eds.map((e) => ({ ...e, animated: false })))
-                setExecuting(false)
-                // keep alerts on nodes
-                setNodes((nds) => nds.map((n) => (n.id === failId ? { ...n, data: { ...n.data, alert: { color: 'red', message: 'Execution error' } } } : n)))
-                return
-              }
-              setStatus(stage, 'success')
-              await sleep(200)
-            }
-            // Analytics
-            stage = getByTitle('Analytics')
-            setStatus(stage, 'running')
-            await sleep(800)
-            setStatus(stage, 'success')
-            await sleep(200)
-            // Outputs
-            stage = getByTitle('Output')
-            setStatus(stage, 'running')
-            await sleep(700)
-            setStatus(stage, 'success')
-            setExecResult('success')
-          } finally {
-            // stop edge animation and end execution with bar feedback
-            setEdges((eds) => eds.map((e) => ({ ...e, animated: false })))
-            setExecuting(false)
-            // Show a brief state in navbar via class on bottom bar handled by CSS using executing/execution result
-            // Add green alerts to successful nodes if none present
-            setNodes((nds) => nds.map((n) => (n.className === 'rf-node-ok' && !n.data?.alert ? { ...n, data: { ...n.data, alert: { color: 'green', message: 'Completed' } } } : n)))
-          }
-          }}
+          onRun={requestPipelineExecution}
+          runDisabled={!serverConnected || connectingServer || Boolean(activeExecution)}
         />
       )}
       <Toast toasts={toasts} onDismiss={dismissToast} />

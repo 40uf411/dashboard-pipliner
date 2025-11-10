@@ -7,17 +7,24 @@ from typing import Any, Dict, Literal, Tuple
 
 import numpy as np
 
-from .dag import ExecutionResult, PipelineError, execute_simplified_graph, simplify_reactflow_json
+from .dag import ExecutionResult, ObserverFn, PipelineError, execute_simplified_graph, simplify_reactflow_json
 
 
 def run_graph(
     graph_payload: Dict[str, Any],
     *,
     strategy: Literal["kahn", "dfs"] = "kahn",
+    observer: ObserverFn | None = None,
+    simulate_delay_range: Tuple[float, float] | None = None,
 ) -> Tuple[ExecutionResult, Dict[str, Any]]:
     """Execute a graph payload and return both the raw result and a summary."""
     simplified = simplify_reactflow_json(graph_payload)
-    result = execute_simplified_graph(simplified, strategy=strategy)
+    result = execute_simplified_graph(
+        simplified,
+        strategy=strategy,
+        observer=observer,
+        simulate_delay_range=simulate_delay_range,
+    )
     summary = summarize_execution(result)
     return result, summary
 
