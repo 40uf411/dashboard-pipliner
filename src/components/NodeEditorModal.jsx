@@ -47,7 +47,14 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
   )
 
   const initialTitle = targetNode?.data?.title ?? ''
+  const isOutputNode = useMemo(() => {
+    const category = String(targetNode?.data?.category || '').toLowerCase()
+    const kind = String(targetNode?.data?.kind || '').toLowerCase()
+    return category === 'output' || kind === 'output'
+  }, [targetNode])
   const [title, setTitle] = useState(initialTitle)
+  const initialTrackOutput = Boolean(targetNode?.data?.trackOutput)
+  const [trackOutput, setTrackOutput] = useState(isOutputNode ? true : initialTrackOutput)
 
   const initialStructured = useMemo(() => {
     if (!structured) return {}
@@ -62,6 +69,7 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
   )
 
   useEffect(() => setTitle(initialTitle), [initialTitle])
+  useEffect(() => setTrackOutput(isOutputNode ? true : initialTrackOutput), [initialTrackOutput, isOutputNode])
 
   useEffect(() => {
     if (structured) {
@@ -349,6 +357,7 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
     const next = {
       title,
       params: buildParams(),
+      trackOutput: isOutputNode ? true : Boolean(trackOutput),
     }
     onSave(next)
   }
@@ -394,6 +403,24 @@ export default function NodeEditorModal({ node, onSave, onClose }) {
               placeholder="Node title"
             />
           </label>
+          <div className="field">
+            <span className="field-label">Track output</span>
+            <label className="checkbox-option">
+              <input
+                type="checkbox"
+                checked={trackOutput}
+                onChange={(e) => setTrackOutput(e.target.checked)}
+                disabled={isOutputNode}
+                aria-label="Toggle track output"
+              />
+              <span>{trackOutput ? 'Enabled' : 'Disabled'}</span>
+            </label>
+            <div className="muted-text">
+              {isOutputNode
+                ? 'Always on for output nodes.'
+                : 'Enable this to capture the node output during execution.'}
+            </div>
+          </div>
 
           {structured ? (
             <>

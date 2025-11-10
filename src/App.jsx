@@ -48,6 +48,28 @@ const INPUT_HANDLE_FALLBACK = '__single'
 
 const PLATFORM_VERSION = 'v0.9.0'
 
+const resolveApiBase = () => {
+  const configured = import.meta.env.VITE_ZOFIA_API_URL
+  if (typeof configured === 'string' && configured.trim().length > 0) {
+    return configured.trim().replace(/\/$/, '')
+  }
+  return 'http://localhost:8000'
+}
+
+const API_BASE_URL = resolveApiBase()
+
+const buildApiUrl = (path = '') => {
+  if (!path) return API_BASE_URL
+  const normalisedPath = path.startsWith('/') ? path : `/${path}`
+  return `${API_BASE_URL}${normalisedPath}`
+}
+
+const ensureAbsoluteDownloadUrl = (href) => {
+  if (!href) return null
+  if (/^https?:\/\//i.test(href)) return href
+  return buildApiUrl(href)
+}
+
 const normaliseSingleInputLinks = (edges = []) => {
   const seen = new Set()
   return (Array.isArray(edges) ? edges : []).filter((edge) => {
@@ -114,6 +136,13 @@ function App() {
   const [connectingServer, setConnectingServer] = useState(false)
   const [syncingPipelines, setSyncingPipelines] = useState(false)
   const [serverConversation, setServerConversation] = useState([])
+  const [outputFiles, setOutputFiles] = useState([])
+  const [lastExecutionAt, setLastExecutionAt] = useState(null)
+  const [executionList, setExecutionList] = useState([])
+  const [selectedExecutionId, setSelectedExecutionId] = useState(null)
+  const [selectedExecutionMeta, setSelectedExecutionMeta] = useState(null)
+  const [executionsLoading, setExecutionsLoading] = useState(false)
+  const [executionFilesLoading, setExecutionFilesLoading] = useState(false)
   const executionLocked = executing || Boolean(activeExecution)
   const fileInputRef = useRef(null)
   const serverSettingsInitialisedRef = useRef(false)
@@ -356,13 +385,29 @@ function App() {
     setActiveDock((cur) => (cur === tab ? null : tab))
   }
 
+  const normaliseNodeData = (data) => {
+    if (!data || typeof data !== 'object') return data
+    const isOutputCategory =
+      String(data.category || '').toLowerCase() === 'output' ||
+      String(data.kind || '').toLowerCase() === 'output'
+    if (isOutputCategory) {
+      return { ...data, trackOutput: true }
+    }
+    if (typeof data.trackOutput === 'boolean') return data
+    return { ...data, trackOutput: Boolean(data.trackOutput) }
+  }
+
   const cloneNodes = (list) =>
-    (Array.isArray(list) ? list : []).map((node) => ({
-      ...node,
-      position: node?.position ? { ...node.position } : node.position,
-      style: node?.style ? { ...node.style } : node.style,
-      data: node?.data ? JSON.parse(JSON.stringify(node.data)) : node.data,
-    }))
+    (Array.isArray(list) ? list : []).map((node) => {
+      const hasDataObject = node?.data && typeof node.data === 'object'
+      const clonedData = hasDataObject ? JSON.parse(JSON.stringify(node.data)) : node?.data
+      return {
+        ...node,
+        position: node?.position ? { ...node.position } : node.position,
+        style: node?.style ? { ...node.style } : node.style,
+        data: hasDataObject ? normaliseNodeData(clonedData) : clonedData,
+      }
+    })
 
   const cloneEdges = (list) =>
     normaliseSingleInputLinks(
@@ -390,6 +435,9 @@ function App() {
       preview: pipelinePreview,
       meta: {
         ...(currentPipelineRecord?.meta || {}),
+        owner:
+          currentPipelineRecord?.meta?.owner ||
+          (serverUser ? { id: serverUser, label: serverUser } : undefined),
         isDark,
         zoom: zoomPct,
         interactive,
@@ -576,6 +624,157 @@ function App() {
       addToast('Failed to download pipeline.', 'error')
     }
   }
+
+  const handleDownloadOutput = useCallback(
+    (entry) => {
+      if (!entry) return
+      const filename = entry.downloadName || entry.filename || entry.name || 'output'
+      const href = entry.downloadUrl || entry.url || entry.href
+      if (href) {
+        const link = document.createElement('a')
+        link.href = href
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        return
+      }
+      const mimeType = entry.mimeType || entry.contentType || 'application/octet-stream'
+      const blob =
+        entry.blob ||
+        (typeof entry.content === 'string' ? new Blob([entry.content], { type: mimeType }) : null)
+      if (blob) {
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+        return
+      }
+      addToast('Download link is not available for this output yet.', 'info', 2600)
+    },
+    [addToast]
+  )
+
+  const loadExecutionFiles = useCallback(
+    async (executionId) => {
+      if (!executionId) return
+      setExecutionFilesLoading(true)
+      const prettify = (value) => {
+        if (!value || typeof value !== 'string') return null
+        return value
+          .split(/[-_/]+/)
+          .filter(Boolean)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' ')
+      }
+      try {
+        const response = await fetch(buildApiUrl(`/executions/${executionId}/files`))
+        if (response.status === 404) {
+          setOutputFiles([])
+          return
+        }
+        if (!response.ok) {
+          throw new Error(`Failed to fetch outputs (status ${response.status})`)
+        }
+        const payload = await response.json()
+        const files = Array.isArray(payload) ? payload : []
+        const mapped = files.map((file, index) => {
+          const relativePath = file?.path || file?.name || file?.download_url || `file-${index}`
+          const segmentFromPath =
+            typeof file?.path === 'string' && file.path.includes('/')
+              ? file.path.split(/[\\/]/)[0]
+              : file?.category
+          const nodeLabel = prettify(segmentFromPath) || 'Tracked output'
+          return {
+            id: `${executionId}:${relativePath || index}`,
+            name: file?.name || relativePath || `Output ${index + 1}`,
+            node: nodeLabel,
+            category: file?.category,
+            type: file?.category || segmentFromPath || file?.media_type || 'general',
+            mimeType: file?.media_type,
+            downloadUrl: ensureAbsoluteDownloadUrl(file?.download_url),
+            sizeBytes: file?.size_bytes,
+            modifiedAt: file?.modified_at,
+            path: file?.path,
+          }
+        })
+        setOutputFiles(mapped)
+      } catch (error) {
+        console.error('Failed to load execution files', error)
+        setOutputFiles([])
+        addToast('Failed to load outputs for the selected execution.', 'error', 3600)
+      } finally {
+        setExecutionFilesLoading(false)
+      }
+    },
+    [addToast]
+  )
+
+  const fetchExecutions = useCallback(async () => {
+    setExecutionsLoading(true)
+    try {
+      const response = await fetch(buildApiUrl('/executions'))
+      if (!response.ok) {
+        throw new Error(`Failed to fetch executions (status ${response.status})`)
+      }
+      const payload = await response.json()
+      const executions = Array.isArray(payload) ? payload : []
+      setExecutionList(executions)
+      if (!executions.length) {
+        setSelectedExecutionId(null)
+        setSelectedExecutionMeta(null)
+        setOutputFiles([])
+        setLastExecutionAt(null)
+        setExecutionFilesLoading(false)
+        return
+      }
+      const stillValid =
+        selectedExecutionId && executions.some((entry) => entry?.id === selectedExecutionId)
+      if (stillValid) {
+        const nextMeta = executions.find((entry) => entry?.id === selectedExecutionId) || null
+        setSelectedExecutionMeta(nextMeta)
+        if (nextMeta) {
+          setLastExecutionAt(nextMeta.completed_at || nextMeta.started_at || null)
+          loadExecutionFiles(selectedExecutionId)
+        }
+        return
+      }
+      setSelectedExecutionId(null)
+      setSelectedExecutionMeta(null)
+      setOutputFiles([])
+      setLastExecutionAt(null)
+      setExecutionFilesLoading(false)
+    } catch (error) {
+      console.error('Failed to fetch executions', error)
+      addToast('Could not load executions from the server API.', 'error', 3600)
+    } finally {
+      setExecutionsLoading(false)
+    }
+  }, [selectedExecutionId, loadExecutionFiles, addToast])
+
+  const handleSelectExecution = useCallback(
+    (executionId) => {
+      if (!executionId) return
+      setSelectedExecutionId(executionId)
+      const meta = executionList.find((entry) => entry?.id === executionId) || null
+      setSelectedExecutionMeta(meta)
+      if (meta) {
+        setLastExecutionAt(meta.completed_at || meta.started_at || null)
+      }
+      loadExecutionFiles(executionId)
+    },
+    [executionList, loadExecutionFiles]
+  )
+
+  useEffect(() => {
+    if (activeDock === 'outputs') {
+      fetchExecutions()
+    }
+  }, [activeDock, fetchExecutions])
 
   const handleRenamePipeline = (pipelineId, nextName) => {
     if (!pipelineId) return
@@ -1092,6 +1291,7 @@ function App() {
             setExecResult('success')
             setEdgesAnimated(false)
             finalizeNodeStatuses('success', 'Pipeline completed')
+            setLastExecutionAt(new Date().toISOString())
             updateActiveExecution(null)
             addToast('Pipeline execution finished successfully.', 'success', 3200)
             return
@@ -1102,6 +1302,7 @@ function App() {
             setExecResult('error')
             setEdgesAnimated(false)
             finalizeNodeStatuses('error', content?.error)
+            setLastExecutionAt(new Date().toISOString())
             updateActiveExecution(null)
             addToast(content?.error || 'Pipeline execution failed.', 'error', 3600)
             return
@@ -1205,6 +1406,7 @@ function App() {
     }
     try {
       setExecResult(null)
+      setOutputFiles([])
       setChecking(true)
       setExecuting(false)
       resetNodeStatuses()
@@ -1420,13 +1622,15 @@ function App() {
           sources: 1,
           templateKey: key,
           params: {},
+          trackOutput: false,
         }
+    const nextData = normaliseNodeData(data)
 
     setNodes((nds) => [
       ...nds,
       {
         ...base,
-        data,
+        data: nextData,
         sourcePosition: 'right',
         targetPosition: 'left',
       },
@@ -1650,6 +1854,15 @@ function App() {
           onConnectServer={handleServerConnect}
           onDisconnectServer={handleServerDisconnect}
           terminalLogs={serverConversation}
+          outputs={outputFiles}
+          lastExecutionAt={lastExecutionAt}
+          onDownloadOutput={handleDownloadOutput}
+          executions={executionList}
+          selectedExecutionId={selectedExecutionId}
+          onSelectExecution={handleSelectExecution}
+          executionMeta={selectedExecutionMeta}
+          executionsLoading={executionsLoading}
+          executionFilesLoading={executionFilesLoading}
         />
       )}
       {paneMenu.open ? (
@@ -1711,17 +1924,18 @@ function App() {
               ...menu.node.data,
               alert: undefined,
             }
+            const duplicatedData = normaliseNodeData({
+              ...clonedData,
+              // ensure params are cloned deeply
+              params: clonedData.params ? JSON.parse(JSON.stringify(clonedData.params)) : {},
+            })
             setNodes((nds) => [
               ...nds,
               {
                 ...menu.node,
                 id: newId,
                 position: offset,
-                data: {
-                  ...clonedData,
-                  // ensure params are cloned deeply
-                  params: clonedData.params ? JSON.parse(JSON.stringify(clonedData.params)) : {},
-                },
+                data: duplicatedData,
               },
             ])
             setCurrentPipelineId(null)
@@ -1740,11 +1954,22 @@ function App() {
       <NodeEditorModal
         node={editingNode}
         onClose={() => setEditingNode(null)}
-        onSave={({ title, params }) => {
+        onSave={({ title, params, trackOutput }) => {
           if (!editingNode) return
+          const nextTrackOutput = Boolean(trackOutput)
           setNodes((nds) =>
             nds.map((n) =>
-              n.id === editingNode.id ? { ...n, data: { ...n.data, title, params } } : n
+              n.id === editingNode.id
+                ? {
+                    ...n,
+                    data: {
+                      ...n.data,
+                      title,
+                      params,
+                      trackOutput: nextTrackOutput,
+                    },
+                  }
+                : n
             )
           )
           setEditingNode(null)

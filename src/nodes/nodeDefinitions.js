@@ -357,6 +357,8 @@ export const createNodeData = (templateKey, overrides = {}) => {
     templateKey,
     kind: template.kind,
     params: deepClone(template.defaultParams),
+    trackOutput: template.category === 'output',
+    category: template.category,
     ...overrides,
   }
 }

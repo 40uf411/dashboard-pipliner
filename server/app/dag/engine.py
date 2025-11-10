@@ -56,6 +56,7 @@ class Node:
     node_id: str
     node_type: NodeType
     params: Dict[str, Any]
+    track_output: bool = False
 
 
 # ================================
@@ -125,6 +126,56 @@ def _fn_filter(inp: NodeInput, params: Dict[str, Any]) -> np.ndarray:
             out[:, y, x] = window.sum(axis=(1, 2)) / area
     return out
 
+FIGURE_COLORS = np.array(
+    [
+        [249, 115, 22],
+        [59, 130, 246],
+        [16, 185, 129],
+        [236, 72, 153],
+        [250, 204, 21],
+    ],
+    dtype=np.float32,
+) / 255.0
+
+
+def _render_figure_image(descriptor: Dict[str, Any]) -> np.ndarray:
+    """Convert descriptor statistics into a colorful bar visualization."""
+    stats = descriptor.get("channel_stats") or {}
+    values = None
+    for key in ("mean", "max", "min", "std"):
+        data = stats.get(key)
+        if data:
+            values = np.array(data, dtype=np.float32)
+            break
+    if values is None or not values.size:
+        values = np.linspace(0.25, 0.75, num=3, dtype=np.float32)
+    values = np.nan_to_num(values, nan=0.0)
+    v_min = float(values.min())
+    v_max = float(values.max())
+    denom = (v_max - v_min) if v_max != v_min else (abs(v_max) or 1.0)
+    normalized = np.clip((values - v_min) / denom, 0.0, 1.0)
+
+    bar_count = len(normalized)
+    width = max(160, bar_count * 40)
+    height = 180
+    canvas = np.ones((3, height, width), dtype=np.float32) * 0.08
+    bar_width = width // bar_count if bar_count else width
+    baseline = height - 15
+
+    for idx, value in enumerate(normalized):
+        x_start = idx * bar_width + 6
+        x_end = (idx + 1) * bar_width - 6 if bar_count > 1 else width - 6
+        x_end = max(x_start + 4, min(width - 4, x_end))
+        bar_height = int(20 + value * (height - 40))
+        y_start = baseline - bar_height
+        color = FIGURE_COLORS[idx % len(FIGURE_COLORS)]
+        canvas[:, y_start:baseline, x_start:x_end] = color[:, None, None]
+
+    # Draw baseline
+    canvas[:, baseline:baseline + 2, :] = 0.25
+    return canvas
+
+
 def _fn_structural_descriptor(inp: NodeInput, _params: Dict[str, Any]) -> Dict[str, Any]:
     """Compute simple per-channel statistics used downstream."""
     arr = _ensure_image_array(inp, node_kind="structural-descriptor")
@@ -165,10 +216,12 @@ def _fn_figure(inp: NodeInput, params: Dict[str, Any]) -> Dict[str, Any]:
         raise PipelineError("figure node expects a descriptor dictionary input")
     title = params.get("title", "Generated Figure")
     subtitle = params.get("subtitle", "Auto summary")
+    image = _render_figure_image(inp)
     return {
         "title": title,
         "subtitle": subtitle,
         "data": inp,
+        "_image": image,
     }
 
 def _fn_text(inp: NodeInput, params: Dict[str, Any]) -> str:
@@ -243,6 +296,23 @@ def simplify_reactflow_json(reactflow_json: Dict[str, Any]) -> Dict[str, Any]:
             raise PipelineError(f"Node '{n.get('id')}' params must be a dict.")
         return params
 
+    def _extract_track_flag(n: Dict[str, Any]) -> bool:
+        data = n.get("data", {})
+        raw = (
+            data.get("trackOutput")
+            if "trackOutput" in data
+            else data.get("track_output")
+        )
+        if raw is None:
+            raw = n.get("trackOutput", n.get("track_output"))
+        if isinstance(raw, str):
+            lowered = raw.strip().lower()
+            if lowered in {"true", "1", "yes", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "off"}:
+                return False
+        return bool(raw)
+
     # Normalize nodes
     seen_ids = set()
     for n in raw_nodes:
@@ -260,6 +330,7 @@ def simplify_reactflow_json(reactflow_json: Dict[str, Any]) -> Dict[str, Any]:
             "id": nid,
             "kind": kind,
             "params": params,
+            "trackOutput": _extract_track_flag(n),
         })
 
     # Normalize edges
@@ -330,7 +401,8 @@ def execute_simplified_graph(
         params = n.get("params", {})
         if params is None or not isinstance(params, dict):
             raise PipelineError(f"Node '{nid}' params must be a dict.")
-        G.add_node(nid, kind=kind, params=params)
+        track_output = bool(n.get("trackOutput") or n.get("track_output"))
+        G.add_node(nid, kind=kind, params=params, track_output=track_output)
 
     for e in simplified.get("edges", []):
         src, tgt = e["source"], e["target"]
@@ -398,9 +470,16 @@ def execute_simplified_graph(
     # Create Node wrappers bound to the registry
     node_objs: Dict[str, Node] = {}
     for nid in order:
-        k = G.nodes[nid]["kind"]
-        p = G.nodes[nid]["params"]
-        node_objs[nid] = Node(node_id=nid, node_type=registry[k], params=p)
+        node_data = G.nodes[nid]
+        k = node_data["kind"]
+        p = node_data["params"]
+        track_output = bool(node_data.get("track_output"))
+        node_objs[nid] = Node(
+            node_id=nid,
+            node_type=registry[k],
+            params=p,
+            track_output=track_output,
+        )
 
     outputs: Dict[str, Any] = {}
     delay_range: Optional[Tuple[float, float]] = None

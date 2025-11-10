@@ -1,14 +1,189 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { TbHierarchy2, TbDownload, TbPlugConnectedX } from 'react-icons/tb'
 import { FiGitBranch, FiEdit3 } from 'react-icons/fi'
 import { IoSave, IoOpen } from 'react-icons/io5'
 import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
 import { MdDisplaySettings, MdDeleteOutline, MdCloudSync } from 'react-icons/md'
-import { LuSquareTerminal } from 'react-icons/lu'
+import { LuSquareTerminal, LuLayoutList, LuDownload } from 'react-icons/lu'
+import { HiOutlineViewGrid } from 'react-icons/hi'
+import {
+  BsFileEarmark,
+  BsFileEarmarkBinary,
+  BsFileEarmarkCode,
+  BsFileEarmarkEasel,
+  BsFileEarmarkSpreadsheet,
+  BsFileEarmarkFont,
+  BsFileEarmarkImage,
+  BsFileEarmarkMusic,
+  BsFileEarmarkPdf,
+  BsFileEarmarkPlay,
+  BsFileEarmarkRichtext,
+} from 'react-icons/bs'
 import { GrConnect } from 'react-icons/gr'
 import reactLogo from '../assets/react.svg'
 import NodePreview from './NodePreview.jsx'
 import { NODE_SECTIONS, NODE_TEMPLATES } from '../nodes/nodeDefinitions.js'
+
+const OUTPUT_VIEW_PREF_KEY = 'visual-pipeline-dashboard:outputs-view'
+
+const FILE_TYPE_ICONS = {
+  general: BsFileEarmark,
+  binary: BsFileEarmarkBinary,
+  bin: BsFileEarmarkBinary,
+  code: BsFileEarmarkCode,
+  presentation: BsFileEarmarkEasel,
+  slides: BsFileEarmarkEasel,
+  sheets: BsFileEarmarkSpreadsheet,
+  spreadsheet: BsFileEarmarkSpreadsheet,
+  text: BsFileEarmarkFont,
+  txt: BsFileEarmarkFont,
+  image: BsFileEarmarkImage,
+  img: BsFileEarmarkImage,
+  audio: BsFileEarmarkMusic,
+  music: BsFileEarmarkMusic,
+  pdf: BsFileEarmarkPdf,
+  video: BsFileEarmarkPlay,
+  richtext: BsFileEarmarkRichtext,
+  word: BsFileEarmarkRichtext,
+}
+
+const normaliseTypeKey = (value) => {
+  if (typeof value !== 'string') return 'general'
+  const normalised = value.toLowerCase().replace(/[^a-z]/g, '')
+  return normalised || 'general'
+}
+
+const getFileTypeIcon = (type) => {
+  const key = normaliseTypeKey(type)
+  return FILE_TYPE_ICONS[key] || FILE_TYPE_ICONS.general
+}
+
+const formatTypeLabel = (type) => {
+  if (!type) return 'General'
+  return type
+    .toString()
+    .split(/[\s/_-]+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+const formatExecutionTimestamp = (value) => {
+  if (!value) return 'No completed runs yet'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unknown execution time'
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const detectTypeFromMime = (mime) => {
+  if (typeof mime !== 'string') return null
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime.includes('pdf')) return 'pdf'
+  if (mime.includes('presentation') || mime.includes('powerpoint')) return 'presentation'
+  if (mime.includes('sheet') || mime.includes('excel')) return 'sheets'
+  if (mime.includes('word') || mime.includes('rtf')) return 'richtext'
+  if (mime.includes('text')) return 'text'
+  if (mime.includes('json') || mime.includes('xml') || mime.includes('yaml') || mime.includes('script')) return 'code'
+  if (mime.includes('binary') || mime.includes('octet')) return 'binary'
+  return null
+}
+
+const extractFileExtension = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return ''
+  const basename = value.split(/[\\/]/).pop() || value
+  const idx = basename.lastIndexOf('.')
+  if (idx === -1) return ''
+  return basename.slice(idx + 1).toLowerCase()
+}
+
+const detectTypeFromExtension = (extension) => {
+  if (!extension) return null
+  const map = {
+    jpg: 'image',
+    jpeg: 'image',
+    png: 'image',
+    gif: 'image',
+    svg: 'image',
+    webp: 'image',
+    bmp: 'image',
+    mp4: 'video',
+    mov: 'video',
+    avi: 'video',
+    mkv: 'video',
+    mp3: 'audio',
+    wav: 'audio',
+    flac: 'audio',
+    m4a: 'audio',
+    json: 'code',
+    js: 'code',
+    ts: 'code',
+    py: 'code',
+    ipynb: 'code',
+    html: 'code',
+    css: 'code',
+    yaml: 'code',
+    yml: 'code',
+    xml: 'code',
+    sql: 'code',
+    npy: 'binary',
+    npz: 'binary',
+    bin: 'binary',
+    dat: 'binary',
+    h5: 'binary',
+    hdf5: 'binary',
+    gz: 'binary',
+    tar: 'binary',
+    zip: 'binary',
+    pdf: 'pdf',
+    ppt: 'presentation',
+    pptx: 'presentation',
+    key: 'presentation',
+    csv: 'sheets',
+    xls: 'sheets',
+    xlsx: 'sheets',
+    ods: 'sheets',
+    doc: 'richtext',
+    docx: 'richtext',
+    rtf: 'richtext',
+    txt: 'text',
+    log: 'text',
+    md: 'text',
+  }
+  return map[extension] || null
+}
+
+const formatFileSize = (size) => {
+  const value = Number(size)
+  if (!Number.isFinite(value) || value < 0) return null
+  if (value < 1024) return `${value} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let unitIndex = 0
+  let result = value / 1024
+  while (result >= 1024 && unitIndex < units.length - 1) {
+    result /= 1024
+    unitIndex += 1
+  }
+  return `${result.toFixed(result >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+const formatModifiedTimestamp = (value) => {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 function NodesPanel({ onAdd, disabled }) {
   const [open, setOpen] = useState(() => NODE_SECTIONS.map((sec) => sec.key))
@@ -90,6 +265,342 @@ function EmptyPanel({ title }) {
     <div className="left-panel">
       <div className="panel-header">{title}</div>
       <div className="panel-body muted-text">No content yet.</div>
+    </div>
+  )
+}
+
+function OutputsPanel({
+  files = [],
+  lastExecutionAt,
+  onDownload = () => {},
+  executions = [],
+  selectedExecutionId,
+  onSelectExecution = () => {},
+  executionMeta = null,
+  executionsLoading = false,
+  filesLoading = false,
+}) {
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window === 'undefined') return 'list'
+    try {
+      const stored = window.localStorage.getItem(OUTPUT_VIEW_PREF_KEY)
+      return stored === 'grid' ? 'grid' : 'list'
+    } catch {
+      return 'list'
+    }
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(OUTPUT_VIEW_PREF_KEY, viewMode)
+    } catch {
+      // ignore storage errors
+    }
+  }, [viewMode])
+
+  const totalFiles = Array.isArray(files) ? files.length : 0
+  const executedLabel = formatExecutionTimestamp(
+    executionMeta?.completed_at || executionMeta?.started_at || lastExecutionAt
+  )
+  const panelClassName = `left-panel outputs-panel${viewMode === 'grid' ? ' outputs-panel-grid' : ''}`
+  const executionOptions = useMemo(() => {
+    if (!Array.isArray(executions)) return []
+    return executions
+      .filter((execution) => execution?.id)
+      .map((execution) => {
+        const pipelineName =
+          execution?.graph?.pipeline?.name ||
+          execution?.graph?.name ||
+          execution?.pipeline_id ||
+          'Untitled pipeline'
+        const statusLabel = formatTypeLabel(execution?.status || 'unknown')
+        const timeLabel = formatExecutionTimestamp(
+          execution?.completed_at || execution?.started_at || null
+        )
+        return {
+          id: execution.id,
+          label: `${pipelineName} · ${statusLabel} · ${timeLabel}`,
+        }
+      })
+  }, [executions])
+  const hasExecutionOptions = executionOptions.length > 0
+  const pipelineName =
+    executionMeta?.graph?.pipeline?.name ||
+    executionMeta?.graph?.name ||
+    executionMeta?.pipeline_id ||
+    (executionMeta ? 'Ad-hoc execution' : null)
+  const statusLabel = executionMeta ? formatTypeLabel(executionMeta.status || 'unknown') : null
+  const statusSlug = (executionMeta?.status || 'unknown').toLowerCase()
+  const requestedBy = executionMeta?.requested_by || (executionMeta ? 'Unknown' : null)
+  const sourceLabel = executionMeta?.source ? formatTypeLabel(executionMeta.source) : null
+
+  const getFileType = (entry) => {
+    if (!entry || typeof entry !== 'object') return 'general'
+    const extension = extractFileExtension(entry.name || entry.filename || entry.path || '')
+    const typeCandidates = [
+      detectTypeFromMime(entry.mimeType),
+      detectTypeFromMime(entry.contentType),
+      detectTypeFromExtension(extension),
+      entry.type,
+      entry.kind,
+      entry.category,
+      entry.format,
+    ].filter(Boolean)
+    return typeCandidates.length ? typeCandidates[0] : 'general'
+  }
+
+  const preparedFiles = useMemo(() => {
+    if (!Array.isArray(files)) return []
+    return files.map((file, index) => {
+      const type = getFileType(file)
+      const Icon = getFileTypeIcon(type)
+      const fallbackName = `Output ${index + 1}`
+      const pathDisplay = file?.path || file?.relativePath || null
+      const categoryLabel = formatTypeLabel(file?.category || file?.node || file?.source || 'Output')
+      const sizeLabel = formatFileSize(file?.sizeBytes ?? file?.size_bytes)
+      const modifiedLabel = formatModifiedTimestamp(file?.modifiedAt ?? file?.modified_at)
+      const mimeLabel = file?.mimeType || file?.media_type || file?.contentType || file?.content_type || null
+      return {
+        ...file,
+        _id: file?.id || file?.uuid || `${fallbackName}-${index}`,
+        _typeLabel: formatTypeLabel(type),
+        _Icon: Icon,
+        _displayName: file?.name || file?.filename || fallbackName,
+        _categoryLabel: categoryLabel,
+        _pathDisplay: pathDisplay,
+        _sizeLabel: sizeLabel,
+        _modifiedLabel: modifiedLabel,
+        _mimeLabel: mimeLabel,
+      }
+    })
+  }, [files])
+
+  const renderEmpty = (
+    <div className="output-empty">
+      <p>
+        {!hasExecutionOptions
+          ? 'No tracked outputs yet.'
+          : selectedExecutionId
+              ? 'No files recorded for this execution yet.'
+              : 'Select an execution to view its outputs.'}
+      </p>
+      <p className="muted-text">
+        {!hasExecutionOptions
+          ? 'Enable track output on a node and run the pipeline to collect files.'
+          : selectedExecutionId
+              ? 'Enable track output on the relevant nodes and rerun the pipeline to collect artifacts.'
+              : 'Use the dropdown above to choose which execution to inspect.'}
+      </p>
+    </div>
+  )
+
+  const renderList = () => {
+    if (!preparedFiles.length) return renderEmpty
+    return (
+      <div className="output-list">
+        {preparedFiles.map((file) => (
+          <div key={file._id} className="output-row">
+            <div className="output-row-main output-row-details">
+              <div className="output-file-icon" aria-hidden="true">
+                <file._Icon size={22} />
+              </div>
+              <div className="output-info-block">
+                <div className="output-name">{file._displayName}</div>
+                {file._pathDisplay ? (
+                  <div className="output-path" title={file._pathDisplay}>
+                    {file._pathDisplay}
+                  </div>
+                ) : null}
+                <div className="output-sub">
+                  {file._categoryLabel ? <span>{file._categoryLabel}</span> : null}
+                  {file._categoryLabel && file._typeLabel ? (
+                    <span className="output-dot">•</span>
+                  ) : null}
+                  {file._typeLabel ? (
+                    <span className="output-type-label">{file._typeLabel}</span>
+                  ) : null}
+                </div>
+                <div className="output-meta output-meta-inline">
+                  {file._sizeLabel ? <span className="output-chip">{file._sizeLabel}</span> : null}
+                  {file._mimeLabel ? <span className="output-chip">{file._mimeLabel}</span> : null}
+                  {file._modifiedLabel ? (
+                    <span className="output-chip">{file._modifiedLabel}</span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="output-row-download"
+              onClick={() => onDownload(file)}
+              aria-label={`Download ${file._displayName}`}
+            >
+              <LuDownload size={20} />
+              <span>Download</span>
+            </button>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const renderGrid = () => {
+    if (!preparedFiles.length) return renderEmpty
+    return (
+      <div className="output-grid">
+        {preparedFiles.map((file) => (
+          <div key={file._id} className="output-card">
+            <div className="output-card-icon" aria-hidden="true">
+              <file._Icon size={26} />
+            </div>
+            <div className="output-card-name">{file._displayName}</div>
+            {file._pathDisplay ? (
+              <div className="output-card-path" title={file._pathDisplay}>
+                {file._pathDisplay}
+              </div>
+            ) : null}
+            <div className="output-card-sub">
+              {file._categoryLabel ? <span>{file._categoryLabel}</span> : null}
+              {file._categoryLabel && file._typeLabel ? <span className="output-dot">•</span> : null}
+              {file._typeLabel ? <span>{file._typeLabel}</span> : null}
+            </div>
+            {file._sizeLabel || file._mimeLabel || file._modifiedLabel ? (
+              <div className="output-card-meta">
+                {file._sizeLabel ? <span className="output-chip">{file._sizeLabel}</span> : null}
+                {file._mimeLabel ? <span className="output-chip">{file._mimeLabel}</span> : null}
+                {file._modifiedLabel ? (
+                  <span className="output-chip">{file._modifiedLabel}</span>
+                ) : null}
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="output-card-download"
+              onClick={() => onDownload(file)}
+              aria-label={`Download ${file._displayName}`}
+              title="Download"
+            >
+              <LuDownload size={18} />
+            </button>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const executionIdLabel = executionMeta?.id || '—'
+  const startedLabel = executionMeta?.started_at ? formatExecutionTimestamp(executionMeta.started_at) : '—'
+  const completedLabel = executionMeta?.completed_at
+    ? formatExecutionTimestamp(executionMeta.completed_at)
+    : executionMeta
+        ? executionMeta.status === 'finished'
+            ? 'Awaiting timestamp'
+            : 'In progress'
+        : '—'
+  const statusClass = statusSlug.replace(/[^a-z0-9-]/g, '') || 'unknown'
+  const executionSummary = executionMeta ? (
+    <div className="execution-summary">
+      <div className="execution-summary-grid">
+        <div className="execution-summary-card execution-summary-id">
+          <span className="execution-summary-label">Execution ID</span>
+          <span className="execution-summary-value mono" title={executionIdLabel}>
+            {executionIdLabel}
+          </span>
+        </div>
+        <div className="execution-summary-card">
+          <span className="execution-summary-label">Pipeline</span>
+          <span className="execution-summary-value">{pipelineName || 'Untitled pipeline'}</span>
+        </div>
+        <div className="execution-summary-card">
+          <span className="execution-summary-label">Status</span>
+          <span className={`execution-status-pill status-${statusClass}`}>{statusLabel}</span>
+        </div>
+        <div className="execution-summary-card">
+          <span className="execution-summary-label">Requested By</span>
+          <span className="execution-summary-value">{requestedBy}</span>
+        </div>
+        <div className="execution-summary-card">
+          <span className="execution-summary-label">Source</span>
+          <span className="execution-summary-value">{sourceLabel || 'Unknown'}</span>
+        </div>
+        <div className="execution-summary-card">
+          <span className="execution-summary-label">Started</span>
+          <span className="execution-summary-value">{startedLabel}</span>
+        </div>
+        <div className="execution-summary-card">
+          <span className="execution-summary-label">Completed</span>
+          <span className="execution-summary-value">{completedLabel}</span>
+        </div>
+      </div>
+      {filesLoading ? (
+        <div className="execution-summary-note">
+          <div className="loading-spinner tiny" />
+          <span>Fetching outputs...</span>
+        </div>
+      ) : null}
+    </div>
+  ) : null
+
+  return (
+    <div className={panelClassName} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="panel-header output-header">
+        <div className="output-header-meta">
+          <span className="output-header-title">Outputs</span>
+          <div className="output-header-sub">
+            <span>{totalFiles} file{totalFiles === 1 ? '' : 's'}</span>
+            <span className="output-dot">•</span>
+            <span>{executedLabel}</span>
+          </div>
+        </div>
+        <div className="output-header-controls">
+          {hasExecutionOptions ? (
+            <div className={`execution-select${executionsLoading ? ' disabled' : ''}`}>
+              <select
+                value={selectedExecutionId || ''}
+                onChange={(e) => onSelectExecution && onSelectExecution(e.target.value)}
+                disabled={executionsLoading}
+                aria-label="Select execution"
+              >
+                {!selectedExecutionId ? (
+                  <option value="" disabled>
+                    Select execution
+                  </option>
+                ) : null}
+                {executionOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          <div className="output-view-toggle" role="group" aria-label="Toggle output view">
+            <button
+              type="button"
+              className={`output-view-btn${viewMode === 'list' ? ' active' : ''}`}
+              onClick={() => setViewMode('list')}
+              aria-pressed={viewMode === 'list'}
+              title="List view"
+            >
+              <LuLayoutList size={18} />
+            </button>
+            <button
+              type="button"
+              className={`output-view-btn${viewMode === 'grid' ? ' active' : ''}`}
+              onClick={() => setViewMode('grid')}
+              aria-pressed={viewMode === 'grid'}
+              title="Grid view"
+            >
+              <HiOutlineViewGrid size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="panel-body output-panel-body">
+        {executionSummary}
+        {viewMode === 'grid' ? renderGrid() : renderList()}
+      </div>
     </div>
   )
 }
@@ -321,6 +832,15 @@ function LeftDock({
   onConnectServer = () => {},
   onDisconnectServer = () => {},
   terminalLogs = [],
+  outputs = [],
+  lastExecutionAt = null,
+  onDownloadOutput = () => {},
+  executions = [],
+  selectedExecutionId = null,
+  onSelectExecution = () => {},
+  executionMeta = null,
+  executionsLoading = false,
+  executionFilesLoading = false,
 }) {
   return (
     <>
@@ -409,7 +929,17 @@ function LeftDock({
             logs={terminalLogs}
           />
         ) : (
-          <EmptyPanel title="Outputs" />
+          <OutputsPanel
+            files={outputs}
+            lastExecutionAt={lastExecutionAt}
+            onDownload={onDownloadOutput}
+            executions={executions}
+            selectedExecutionId={selectedExecutionId}
+            onSelectExecution={onSelectExecution}
+            executionMeta={executionMeta}
+            executionsLoading={executionsLoading}
+            filesLoading={executionFilesLoading}
+          />
         )
       ) : null}
     </>
@@ -755,7 +1285,6 @@ function PipelinesPanel({
     </div>
   )
 }
-
 
 
 
