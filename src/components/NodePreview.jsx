@@ -10,11 +10,25 @@ const COLORS = {
   azure: '#3b82f6',
 }
 
-export default function NodePreview({ title, subtitle, color = 'grey', description, takes, returns, onClick, onDragStart, draggable = true }) {
+export default function NodePreview({
+  title,
+  subtitle,
+  color = 'grey',
+  description,
+  takes,
+  returns,
+  onClick,
+  onDragStart,
+  draggable = true,
+  className,
+  style,
+}) {
   const accent = COLORS[color] ?? COLORS.grey
+  const wrapperClass = ['node-preview-wrapper', className].filter(Boolean).join(' ')
   return (
     <div
-      className="node-preview-wrapper"
+      className={wrapperClass}
+      style={style}
       role="button"
       tabIndex={0}
       onClick={onClick}

@@ -500,6 +500,37 @@ body {
   grid-template-columns: 1fr;
   gap: 16px;
 }
+.pipelines-grid.spawn-wave {
+  position: relative;
+}
+.pipeline-card.ios-enter {
+  animation: iosCardPop 460ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  animation-fill-mode: both;
+  animation-delay: var(--spawn-delay, 0ms);
+  transform-origin: center;
+}
+@keyframes iosCardPop {
+  0% {
+    opacity: 0;
+    transform: translateY(26px) scale(0.92);
+    filter: blur(9px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.02);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-card.ios-enter {
+    animation: none;
+  }
+}
 .pipeline-actions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
@@ -1007,7 +1038,7 @@ body {
 
 .terminal-row {
   display: grid;
-  grid-template-columns: 75px 92px 1fr;
+  grid-template-columns: 85px 65px 1fr;
   gap: 12px;
   padding: 6px 8px;
   border-radius: 8px;
@@ -1125,6 +1156,47 @@ body {
   display: grid;
   grid-template-columns: 1fr; /* one node per row */
   gap: 12px;
+}
+.preview-grid.node-wave .node-preview-wrapper {
+  will-change: transform, opacity, filter;
+}
+.node-preview-wrapper.node-enter {
+  opacity: 0;
+  transform: translateY(26px) scale(0.92);
+  filter: blur(10px);
+  animation: nodeCascade 0.1s cubic-bezier(0.18, 0.88, 0.32, 1.2) forwards;
+  animation-delay: var(--spawn-delay, 0ms);
+  animation-fill-mode: both;
+}
+@keyframes nodeCascade {
+  0% {
+    opacity: 0;
+    transform: translateY(28px) scale(0.9);
+    filter: blur(12px);
+  }
+  18% {
+    opacity: 0.05;
+    transform: translateY(24px) scale(0.92);
+    filter: blur(10px);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.02);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .node-preview-wrapper.node-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
 }
 
 .node-preview-wrapper {

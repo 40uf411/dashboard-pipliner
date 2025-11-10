@@ -264,62 +264,6 @@ function BottomBar({
         <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Settings</span>
       </div>
 
-      <div className="bar-item" title="Save pipeline">
-        <div
-          className="bar-btn"
-          role="button"
-          tabIndex={0}
-          onClick={() => onSavePipeline && onSavePipeline()}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSavePipeline && onSavePipeline()}
-          aria-label="Save pipeline"
-        >
-          <IoSave size={18} />
-        </div>
-        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Save</span>
-      </div>
-
-      <div className="bar-item" title="Load pipeline">
-        <div
-          className="bar-btn"
-          role="button"
-          tabIndex={0}
-          onClick={() => onLoadPipeline && onLoadPipeline()}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onLoadPipeline && onLoadPipeline()}
-          aria-label="Load pipeline"
-        >
-          <IoOpen size={18} />
-        </div>
-        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Load</span>
-      </div>
-
-      <div className="bar-item" title="Download pipeline">
-        <div
-          className="bar-btn"
-          role="button"
-          tabIndex={0}
-          onClick={() => onDownloadPipeline && onDownloadPipeline()}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onDownloadPipeline && onDownloadPipeline()}
-          aria-label="Download pipeline"
-        >
-          <RiDownloadCloud2Fill size={18} />
-        </div>
-        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Download</span>
-      </div>
-
-      <div className="bar-item" title="Upload pipeline (.board)">
-        <div
-          className="bar-btn"
-          role="button"
-          tabIndex={0}
-          onClick={() => onUploadPipeline && onUploadPipeline()}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onUploadPipeline && onUploadPipeline()}
-          aria-label="Upload pipeline"
-        >
-          <RiUploadCloud2Fill size={18} />
-        </div>
-        <span className="bar-label" style={{ color: 'var(--muted-text)', fontSize: '0.85rem' }}>Upload</span>
-      </div>
-
       <div className="bar-sep" />
 
       <div className="bar-item" title="Screenshot">

@@ -1,9 +1,9 @@
-﻿import { useEffect, useRef, useState, memo } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { TbHierarchy2, TbDownload, TbPlugConnectedX } from 'react-icons/tb'
 import { FiGitBranch, FiEdit3 } from 'react-icons/fi'
 import { IoSave, IoOpen } from 'react-icons/io5'
 import { RiDownloadCloud2Fill, RiUploadCloud2Fill } from 'react-icons/ri'
-import { MdDisplaySettings, MdDeleteOutline } from 'react-icons/md'
+import { MdDisplaySettings, MdDeleteOutline, MdCloudSync } from 'react-icons/md'
 import { LuSquareTerminal } from 'react-icons/lu'
 import { GrConnect } from 'react-icons/gr'
 import reactLogo from '../assets/react.svg'
@@ -12,8 +12,21 @@ import { NODE_SECTIONS, NODE_TEMPLATES } from '../nodes/nodeDefinitions.js'
 
 function NodesPanel({ onAdd, disabled }) {
   const [open, setOpen] = useState(() => NODE_SECTIONS.map((sec) => sec.key))
+  const [nodeSpawnActive, setNodeSpawnActive] = useState(false)
+  const nodeSpawnRafRef = useRef(null)
   const toggle = (key) =>
     setOpen((arr) => (arr.includes(key) ? arr.filter((k) => k !== key) : [...arr, key]))
+
+  useEffect(() => {
+    setNodeSpawnActive(false)
+    if (nodeSpawnRafRef.current) cancelAnimationFrame(nodeSpawnRafRef.current)
+    nodeSpawnRafRef.current = requestAnimationFrame(() => setNodeSpawnActive(true))
+    return () => {
+      if (nodeSpawnRafRef.current) cancelAnimationFrame(nodeSpawnRafRef.current)
+    }
+  }, [])
+
+  let previewIndex = 0
 
   return (
     <div className="left-panel" onMouseDown={(e) => e.stopPropagation()}>
@@ -32,7 +45,7 @@ function NodesPanel({ onAdd, disabled }) {
               {sec.title}
             </div>
             {open.includes(sec.key) ? (
-              <div className="preview-grid">
+              <div className={`preview-grid${nodeSpawnActive ? ' node-wave' : ''}`}>
                 {sec.items.map((key) => {
                   const template = NODE_TEMPLATES[key]
                   if (!template) return null
@@ -40,6 +53,8 @@ function NodesPanel({ onAdd, disabled }) {
                   const description = preview.description || ''
                   const takes = preview.takes || ''
                   const returns = preview.returns || ''
+                  const delay = 120 + previewIndex * 70
+                  previewIndex += 1
                   return (
                     <NodePreview
                       key={key}
@@ -50,6 +65,8 @@ function NodesPanel({ onAdd, disabled }) {
                       description={description}
                       takes={takes}
                       returns={returns}
+                      className={nodeSpawnActive ? 'node-enter' : undefined}
+                      style={nodeSpawnActive ? { '--spawn-delay': `${delay}ms` } : undefined}
                       onClick={() => onAdd(key)}
                       onDragStart={(e) => {
                         if (disabled) return
@@ -285,12 +302,14 @@ function LeftDock({
   onLoadPipeline,
   onQuickLoad,
   onSavePipeline,
+  onSyncPipelines = () => {},
   onDownloadPipeline,
   onUploadPipeline,
   onOpenSettings,
   onClearSavedPipelines,
   onDeletePipeline,
   onRenamePipeline,
+  syncingPipelines = false,
   serverConnected = false,
   connectingServer = false,
   serverHost = 'localhost',
@@ -365,12 +384,15 @@ function LeftDock({
             onLoadPipeline={onLoadPipeline}
             onQuickLoad={onQuickLoad}
             onSavePipeline={onSavePipeline}
+            onSyncPipelines={onSyncPipelines}
             onDownloadPipeline={onDownloadPipeline}
             onUploadPipeline={onUploadPipeline}
             onOpenSettings={onOpenSettings}
             onClearSavedPipelines={onClearSavedPipelines}
             onDeletePipeline={onDeletePipeline}
             onRenamePipeline={onRenamePipeline}
+            syncingPipelines={syncingPipelines}
+            serverConnected={serverConnected}
           />
         ) : active === 'terminal' ? (
           <TerminalPanel
@@ -394,7 +416,7 @@ function LeftDock({
   )
 }
 
-export default memo(LeftDock)
+export default LeftDock
 
 function PipelinesPanel({
   onClose,
@@ -405,17 +427,22 @@ function PipelinesPanel({
   onLoadPipeline,
   onQuickLoad,
   onSavePipeline,
+  onSyncPipelines,
   onDownloadPipeline,
   onUploadPipeline,
   onOpenSettings,
   onClearSavedPipelines,
   onDeletePipeline,
   onRenamePipeline,
+  syncingPipelines = false,
+  serverConnected = false,
 }) {
   const [pulse, setPulse] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [draftName, setDraftName] = useState('')
   const editingInputRef = useRef(null)
+  const spawnRafRef = useRef(null)
+  const [spawnWaveActive, setSpawnWaveActive] = useState(false)
 
   useEffect(() => {
     if (editingId && editingInputRef.current) {
@@ -429,6 +456,8 @@ function PipelinesPanel({
   const otherPipelines = pipelines.filter((p) => p.id !== currentPipelineId)
   const hasSaved = pipelines.length > 0
   const disableLoad = pipelines.length === 0
+  const canSync = serverConnected && !syncingPipelines
+  const gridClassName = `pipelines-grid${spawnWaveActive ? ' spawn-wave' : ''}`
 
   const handleLoad = (id) => {
     if (!id || id === currentPipelineId) {
@@ -488,11 +517,60 @@ function PipelinesPanel({
     }
   }, [editingId, pipelines])
 
+  useEffect(() => {
+    setSpawnWaveActive(false)
+    if (spawnRafRef.current) cancelAnimationFrame(spawnRafRef.current)
+    spawnRafRef.current = requestAnimationFrame(() => setSpawnWaveActive(true))
+    return () => {
+      if (spawnRafRef.current) cancelAnimationFrame(spawnRafRef.current)
+    }
+  }, [pipelines])
+
   return (
     <div className="left-panel" onMouseDown={(e) => e.stopPropagation()}>
       <div className="panel-header">Pipelines</div>
       <div className="panel-body">
         <div className="pipeline-actions">
+          <div
+            className="pipeline-action"
+            role="button"
+            tabIndex={0}
+            onClick={() => onSavePipeline && onSavePipeline()}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSavePipeline && onSavePipeline()}
+            title="Save current pipeline to your workspace"
+            aria-label="Save pipeline"
+          >
+            <IoSave size={18} />
+            <span>Save</span>
+          </div>
+          <div
+            className={`pipeline-action${canSync ? '' : ' disabled'}`}
+            role="button"
+            tabIndex={canSync ? 0 : -1}
+            onClick={() => {
+              if (!canSync) return
+              onSyncPipelines && onSyncPipelines()
+            }}
+            onKeyDown={(e) => {
+              if (!canSync) return
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSyncPipelines && onSyncPipelines()
+              }
+            }}
+            title={
+              serverConnected
+                ? syncingPipelines
+                    ? 'Fetching pipelines from server...'
+                    : 'Fetch pipelines from the connected server'
+                : 'Connect to the server before syncing.'
+            }
+            aria-label="Sync pipelines"
+            aria-disabled={!canSync}
+          >
+            <MdCloudSync size={18} />
+            <span>{syncingPipelines ? 'Syncing...' : 'Sync'}</span>
+          </div>
           <div
             className="pipeline-action danger"
             role="button"
@@ -512,18 +590,6 @@ function PipelinesPanel({
           >
             <MdDeleteOutline size={18} />
             <span>Clear cache</span>
-          </div>
-          <div
-            className="pipeline-action"
-            role="button"
-            tabIndex={0}
-            onClick={() => onSavePipeline && onSavePipeline()}
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSavePipeline && onSavePipeline()}
-            title="Save current pipeline to your workspace"
-            aria-label="Save pipeline"
-          >
-            <IoSave size={18} />
-            <span>Save</span>
           </div>
           <div
             className={`pipeline-action${disableLoad ? ' disabled' : ''}`}
@@ -565,23 +631,14 @@ function PipelinesPanel({
             <RiUploadCloud2Fill size={18} />
             <span>Upload</span>
           </div>
-          <div
-            className="pipeline-action"
-            role="button"
-            tabIndex={0}
-            onClick={() => onOpenSettings && onOpenSettings()}
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onOpenSettings && onOpenSettings()}
-            title="Open workspace settings"
-            aria-label="Open settings"
-          >
-            <MdDisplaySettings size={18} />
-            <span>Settings</span>
-          </div>
         </div>
 
         <div
-          className={`pipeline-card current${pulse === 'current' ? ' pulse-gold' : ''}`}
-          style={{ backgroundImage: `url(${currentImage})` }}
+          className={`pipeline-card current${pulse === 'current' ? ' pulse-gold' : ''}${spawnWaveActive ? ' ios-enter' : ''}`}
+          style={{
+            backgroundImage: `url(${currentImage})`,
+            ...(spawnWaveActive ? { '--spawn-delay': '0ms' } : {}),
+          }}
           role="button"
           tabIndex={0}
           onClick={() => {
@@ -605,16 +662,19 @@ function PipelinesPanel({
         <div className="pipelines-sep">Saved pipelines</div>
 
         {otherPipelines.length ? (
-          <div className="pipelines-grid">
-            {otherPipelines.map((p) => {
+          <div className={gridClassName}>
+            {otherPipelines.map((p, idx) => {
               const displayName = p.name || 'Untitled pipeline'
               const isEditing = editingId === p.id
 
               return (
                 <div
                   key={p.id}
-                  className={`pipeline-card${pulse === p.id ? ' pulse-gold' : ''}${isEditing ? ' editing' : ''}`}
-                  style={{ backgroundImage: `url(${p.preview || reactLogo})` }}
+                  className={`pipeline-card${pulse === p.id ? ' pulse-gold' : ''}${isEditing ? ' editing' : ''}${spawnWaveActive ? ' ios-enter' : ''}`}
+                  style={{
+                    backgroundImage: `url(${p.preview || reactLogo})`,
+                    ...(spawnWaveActive ? { '--spawn-delay': `${(idx + 1) * 45}ms` } : {}),
+                  }}
                   role="button"
                   tabIndex={0}
                   onClick={() => {

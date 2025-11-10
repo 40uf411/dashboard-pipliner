@@ -27,11 +27,15 @@ import {
   deletePipeline,
 } from './utils/pipelineStorage.js'
 import SettingsOverlay from './components/SettingsOverlay.jsx'
+import { buildAlgerWebSocketURL, describeAlgerFrame } from './utils/algerClient.js'
 
 // Memoized/static React Flow node types to avoid recreating objects each render (#002)
 const nodeTypes = { card: NodeCard }
 
 const SERVER_SETTINGS_KEY = 'visual-pipeline-dashboard:server-settings'
+const REQUEST_PIPELINES_TYPE = 102
+const RESPONSE_PIPELINES_OK = 202
+const RESPONSE_PIPELINES_ERROR = 302
 
 const makeNode = (id, templateKey, position, overrides = {}) => ({
   id,
@@ -124,9 +128,13 @@ function App() {
   const [testingConnection, setTestingConnection] = useState(false)
   const [serverConnected, setServerConnected] = useState(false)
   const [connectingServer, setConnectingServer] = useState(false)
+  const [syncingPipelines, setSyncingPipelines] = useState(false)
   const [serverConversation, setServerConversation] = useState([])
   const fileInputRef = useRef(null)
   const serverSettingsInitialisedRef = useRef(false)
+  const serverSocketRef = useRef(null)
+  const serverSequenceRef = useRef(0)
+  const pipelineSyncRequestRef = useRef(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -167,6 +175,21 @@ function App() {
       document.body.style.overflow = ''
     }
   }, [settingsOpen])
+
+  useEffect(() => {
+    return () => {
+      if (serverSocketRef.current) {
+        try {
+          serverSocketRef.current.close(1000, 'app unmounted')
+        } catch {
+        } finally {
+          serverSocketRef.current = null
+        }
+      }
+      serverSequenceRef.current = 0
+      pipelineSyncRequestRef.current = null
+    }
+  }, [])
 
   const currentPipelineRecord = useMemo(
     () => savedPipelines.find((p) => p.id === currentPipelineId) || null,
@@ -642,39 +665,296 @@ function App() {
     }, 1400)
   }
 
+  const parseAlgerContent = useCallback((raw) => {
+    if (!raw) return {}
+    if (typeof raw === 'string') {
+      try {
+        return JSON.parse(raw)
+      } catch {
+        return {}
+      }
+    }
+    if (typeof raw === 'object') return raw
+    return {}
+  }, [])
+
+  const normaliseServerPipeline = useCallback(
+    (entry) => {
+      if (!entry || typeof entry !== 'object') return null
+      const id = entry.id || entry.pipeline_id || entry.slug
+      if (!id) return null
+      const metadata = entry.metadata && typeof entry.metadata === 'object' ? { ...entry.metadata } : {}
+      const fullGraph = entry.full_graph && typeof entry.full_graph === 'object' ? entry.full_graph : {}
+      const pipelineGraph =
+        fullGraph && typeof fullGraph === 'object'
+          ? fullGraph.pipeline && typeof fullGraph.pipeline === 'object'
+            ? fullGraph.pipeline
+            : fullGraph
+          : {}
+      const nodesFromGraph = Array.isArray(pipelineGraph?.nodes) ? pipelineGraph.nodes : []
+      const nodes = Array.isArray(entry.nodes) ? entry.nodes : nodesFromGraph
+      let edges = []
+      if (Array.isArray(pipelineGraph?.edges) && pipelineGraph.edges.length) {
+        edges = pipelineGraph.edges
+      } else if (Array.isArray(entry.edges) && entry.edges.length) {
+        edges = entry.edges
+      } else if (Array.isArray(metadata?.edges) && metadata.edges.length) {
+        edges = metadata.edges
+      }
+      const now = new Date().toISOString()
+      const syncedMeta = {
+        ...metadata,
+        server: {
+          ...(metadata.server || {}),
+          host: serverHost,
+          user: serverUser,
+          syncedAt: now,
+        },
+      }
+      const idSeqCandidate =
+        Number(entry.idSeq) || (metadata && Number(metadata.idSeq)) || (pipelineGraph && Number(pipelineGraph.idSeq))
+      return {
+        id: String(id),
+        name: String(entry.name || entry.title || id),
+        createdAt: entry.created_at || entry.createdAt || now,
+        updatedAt: entry.updated_at || entry.updatedAt || now,
+        nodes,
+        edges,
+        idSeq: Number.isFinite(idSeqCandidate) ? idSeqCandidate : 1000,
+        preview: entry.preview || metadata?.preview || null,
+        meta: syncedMeta,
+      }
+    },
+    [serverHost, serverUser]
+  )
+
+  const applySyncedPipelines = useCallback(
+    (list) => {
+      setSavedPipelines(list)
+      persistPipelines(list)
+      setCurrentPipelineId((prev) => {
+        if (prev && list.some((p) => p.id === prev)) return prev
+        return list[0]?.id || null
+      })
+      if (list.length) {
+        addToast(
+          `Synced ${list.length} pipeline${list.length === 1 ? '' : 's'} from server.`,
+          'success',
+          3400
+        )
+      } else {
+        addToast('Server sync succeeded but returned no pipelines.', 'info', 3200)
+      }
+    },
+    [addToast]
+  )
+
+  const sendServerMessage = useCallback(
+    (typeCode, body = {}, logMessage) => {
+      const socket = serverSocketRef.current
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        throw new Error('Server connection is not open.')
+      }
+      const nextId = serverSequenceRef.current + 1
+      let encodedContent = '{}'
+      try {
+        encodedContent = JSON.stringify(body || {})
+      } catch (err) {
+        throw new Error('Unable to serialise request payload.')
+      }
+      const payload = {
+        id: nextId,
+        requestId: nextId,
+        type: typeCode,
+        content: encodedContent,
+      }
+      socket.send(JSON.stringify(payload))
+      serverSequenceRef.current = nextId
+      if (logMessage) {
+        appendServerConversation({
+          source: 'front-end',
+          message: logMessage,
+        })
+      }
+      return nextId
+    },
+    [appendServerConversation]
+  )
+
+  const handleSyncPipelines = useCallback(() => {
+    if (syncingPipelines) return
+    const socket = serverSocketRef.current
+    if (!serverConnected || !socket || socket.readyState !== WebSocket.OPEN) {
+      addToast('Connect to the remote server before syncing.', 'error', 3200)
+      return
+    }
+    try {
+      setSyncingPipelines(true)
+      const requestId = sendServerMessage(
+        REQUEST_PIPELINES_TYPE,
+        {},
+        '? request remote pipelines (type 102)'
+      )
+      pipelineSyncRequestRef.current = requestId
+    } catch (err) {
+      setSyncingPipelines(false)
+      pipelineSyncRequestRef.current = null
+      addToast(err?.message || 'Unable to send sync request.', 'error', 3600)
+    }
+  }, [syncingPipelines, serverConnected, sendServerMessage, addToast])
+
   const handleServerDisconnect = useCallback(() => {
-    if (!serverConnected) return
-    setConnectingServer(false)
-    setServerConnected(false)
+    const socket = serverSocketRef.current
+    if (!socket && !serverConnected) return
     appendServerConversation({
       source: 'front-end',
-      message: '⇢ disconnect requested · closing session',
+      message: '? disconnect requested - closing session',
     })
+    if (socket) {
+      try {
+        socket.close(1000, 'client disconnect')
+      } catch {
+        serverSocketRef.current = null
+      }
+      return
+    }
+    setConnectingServer(false)
+    setServerConnected(false)
+    serverSequenceRef.current = 0
+    pipelineSyncRequestRef.current = null
+    setSyncingPipelines(false)
     appendServerConversation({
       source: 'server',
-      message: 'session closed · see you soon',
+      message: 'session closed locally',
     })
     addToast('Disconnected from remote server.', 'info', 2200)
   }, [serverConnected, appendServerConversation, addToast])
 
   const handleServerConnect = useCallback(() => {
     if (connectingServer || serverConnected) return
+    let websocketUrl
+    try {
+      websocketUrl = buildAlgerWebSocketURL(serverHost, serverUser, serverPassword)
+    } catch (err) {
+      addToast(err?.message || 'Invalid server configuration.', 'error', 3600)
+      return
+    }
+    if (serverSocketRef.current) {
+      try {
+        serverSocketRef.current.close(1000, 'restarting connection')
+      } catch {
+        serverSocketRef.current = null
+      }
+    }
+    serverSequenceRef.current = 0
+    pipelineSyncRequestRef.current = null
+    setSyncingPipelines(false)
     setConnectingServer(true)
     addToast('Connecting to remote server...', 'info', 2000)
     appendServerConversation({
       source: 'front-end',
-      message: `⇢ connect ${serverHost || 'host'} as ${serverUser || 'anonymous'}`,
+      message: `? connect ${serverHost || 'host'} as ${serverUser || 'anonymous'}`,
     })
-    setTimeout(() => {
+    try {
+      const socket = new WebSocket(websocketUrl, 'alger')
+      serverSocketRef.current = socket
+
+      const handleOpen = () => {
+        if (serverSocketRef.current !== socket) return
+        setConnectingServer(false)
+        setServerConnected(true)
+        appendServerConversation({
+          source: 'server',
+          message: 'connection established - ready for commands',
+        })
+        addToast('Remote server connected.', 'success', 2600)
+      }
+
+      const handleMessage = (event) => {
+        appendServerConversation({
+          source: 'server',
+          message: describeAlgerFrame(event.data),
+        })
+        let parsed
+        try {
+          parsed = JSON.parse(event.data)
+        } catch {
+          return
+        }
+        const messageId = Number(parsed?.id)
+        if (Number.isFinite(messageId)) {
+          serverSequenceRef.current = Math.max(serverSequenceRef.current, messageId)
+        }
+        const typeCode = Number(parsed?.type)
+        const requestId = Number(parsed?.requestId)
+        const content = parseAlgerContent(parsed?.content)
+
+        if (typeCode === RESPONSE_PIPELINES_OK && pipelineSyncRequestRef.current && (!requestId || requestId === pipelineSyncRequestRef.current)) {
+          pipelineSyncRequestRef.current = null
+          setSyncingPipelines(false)
+          const list = Array.isArray(content?.pipelines) ? content.pipelines : []
+          const normalised = list.map(normaliseServerPipeline).filter(Boolean)
+          applySyncedPipelines(normalised)
+        } else if (typeCode === RESPONSE_PIPELINES_ERROR && pipelineSyncRequestRef.current && (!requestId || requestId === pipelineSyncRequestRef.current)) {
+          pipelineSyncRequestRef.current = null
+          setSyncingPipelines(false)
+          const errorMessage = content?.error || 'Server could not provide pipelines.'
+          addToast(errorMessage, 'error', 3600)
+        }
+      }
+
+      const handleError = () => {
+        appendServerConversation({
+          source: 'server',
+          message: 'transport error detected',
+        })
+      }
+
+      const handleClose = (event) => {
+        if (serverSocketRef.current === socket) {
+          serverSocketRef.current = null
+        }
+        setConnectingServer(false)
+        setServerConnected(false)
+        serverSequenceRef.current = 0
+        if (pipelineSyncRequestRef.current) {
+          pipelineSyncRequestRef.current = null
+          setSyncingPipelines(false)
+        }
+        const reason = event.reason || `code ${event.code || 'unknown'}`
+        appendServerConversation({
+          source: 'server',
+          message: `session closed (${reason})`,
+        })
+        const cleanClose = event.code === 1000 || event.code === 1001
+        addToast(
+          cleanClose ? 'Disconnected from remote server.' : `Server connection closed (${event.code || 'error'})`,
+          cleanClose ? 'info' : 'error',
+          cleanClose ? 2200 : 3600
+        )
+      }
+
+      socket.addEventListener('open', handleOpen)
+      socket.addEventListener('message', handleMessage)
+      socket.addEventListener('error', handleError)
+      socket.addEventListener('close', handleClose)
+    } catch (err) {
+      serverSocketRef.current = null
       setConnectingServer(false)
-      setServerConnected(true)
-      appendServerConversation({
-        source: 'server',
-        message: '⇠ connection established · ready for commands',
-      })
-      addToast('Remote server connected.', 'success', 2600)
-    }, 1400)
-  }, [connectingServer, serverConnected, serverHost, serverUser, appendServerConversation, addToast])
+      addToast(err?.message || 'Failed to open websocket connection.', 'error', 3600)
+    }
+  }, [
+    connectingServer,
+    serverConnected,
+    serverHost,
+    serverUser,
+    serverPassword,
+    addToast,
+    appendServerConversation,
+    parseAlgerContent,
+    normaliseServerPipeline,
+    applySyncedPipelines,
+  ])
 
   const handleToggleServerConnection = () => {
     if (connectingServer) return
@@ -1045,12 +1325,14 @@ function App() {
           onLoadPipeline={handleLoadPipeline}
           onQuickLoad={handleLoadLatestPipeline}
           onSavePipeline={handleSavePipeline}
+          onSyncPipelines={handleSyncPipelines}
           onDownloadPipeline={handleDownloadPipeline}
           onUploadPipeline={handleUploadPipeline}
           onOpenSettings={openSettings}
           onClearSavedPipelines={requestClearSavedPipelines}
           onDeletePipeline={handleDeletePipeline}
           onRenamePipeline={handleRenamePipeline}
+          syncingPipelines={syncingPipelines}
           serverConnected={serverConnected}
           connectingServer={connectingServer}
           serverHost={serverHost}
@@ -1285,6 +1567,7 @@ function App() {
 }
 
 export default App
+
 
 
 
