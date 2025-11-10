@@ -952,7 +952,7 @@ body {
     width var(--duration-medium) var(--ease-smooth),
     box-shadow var(--duration-medium) var(--ease-smooth),
     transform var(--duration-medium) var(--ease-smooth),
-    opacity var(--duration-fast) linear;
+    opacity var(--duration-fast) linear !important;
   will-change: width, transform;
   animation: dock-fade-in var(--duration-medium) var(--ease-smooth);
 }
@@ -992,6 +992,296 @@ body {
   animation:
     dock-fade-in var(--duration-medium) var(--ease-smooth),
     terminal-expand 360ms var(--ease-pop);
+}
+
+.left-panel.outputs-panel-grid {
+  width: 700px;
+}
+
+.output-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.output-header-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.output-header-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.output-header-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--muted-text);
+}
+
+.output-dot {
+  opacity: 0.6;
+}
+
+.output-view-toggle {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  gap: 4px;
+}
+
+[data-theme='dark'] .output-view-toggle {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.output-view-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted-text);
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.output-view-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.panel-body.output-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.output-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.output-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+  gap: 12px;
+  position: relative;
+}
+
+[data-theme='dark'] .output-row {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.output-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.output-file-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+[data-theme='dark'] .output-file-icon {
+  background: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+}
+
+.output-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.output-sub {
+  font-size: 0.8rem;
+  color: var(--muted-text);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.output-type-label {
+  text-transform: capitalize;
+}
+
+.output-actions {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.output-row:hover .output-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.output-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-color);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.output-download-btn:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.25);
+}
+
+.output-download-btn:active {
+  transform: translateY(1px);
+  background: rgba(59, 130, 246, 0.18);
+}
+
+[data-theme='dark'] .output-download-btn {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.output-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.output-card {
+  position: relative;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.75);
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme='dark'] .output-card {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.output-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(59, 130, 246, 0.18);
+  color: #2563eb;
+}
+
+[data-theme='dark'] .output-card-icon {
+  background: rgba(59, 130, 246, 0.3);
+  color: #bfdbfe;
+}
+
+.output-card-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.output-card-sub {
+  font-size: 0.82rem;
+  color: var(--muted-text);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.output-card-download {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--text-color);
+  padding: 6px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  cursor: pointer;
+}
+
+[data-theme='dark'] .output-card-download {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.output-card:hover .output-card-download {
+  opacity: 1;
+  transform: translateY(0);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.3);
+}
+
+.output-card-download:active {
+  transform: translateY(1px);
+}
+
+.output-empty {
+  text-align: center;
+  padding: 32px;
+  border-radius: 16px;
+  border: 1px dashed rgba(15, 23, 42, 0.2);
+  color: var(--muted-text);
+}
+
+[data-theme='dark'] .output-empty {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 1200px) {
+  .left-panel.outputs-panel-grid {
+    width: 620px;
+  }
+
+  .output-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .left-panel.outputs-panel-grid {
+    width: 540px;
+  }
+
+  .output-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .terminal-header {
