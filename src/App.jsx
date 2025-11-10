@@ -46,6 +46,8 @@ const RESPONSE_STATUS_ERROR = 305
 const RESPONSE_PIPELINE_FINISHED_ERROR = 307
 const INPUT_HANDLE_FALLBACK = '__single'
 
+const PLATFORM_VERSION = 'v0.9.0'
+
 const normaliseSingleInputLinks = (edges = []) => {
   const seen = new Set()
   return (Array.isArray(edges) ? edges : []).filter((edge) => {
@@ -1262,6 +1264,7 @@ function App() {
     .join(' ')
   const currentPipelineName =
     settingsPipelineName || currentPipelineRecord?.name || 'Current pipeline'
+  const showWelcomeCard = nodes.length === 0 && !loadingPipeline
 
   // Capture a high‑resolution preview from the MiniMap SVG as PNG
   const capturePipelinePreview = () => {
@@ -1599,8 +1602,22 @@ function App() {
           nodeColor={(n) => (isDark ? 'rgba(148,163,184,0.25)' : 'rgba(100,116,139,0.18)')}
           nodeBorderRadius={6}
         />)}
-        <Background variant="dots" color={isDark ? '#475569' : '#cbd5e1'} gap={18} size={1} />
+        <Background variant="dots" color={isDark ? '#475569' : '#9aa6b4ff'} gap={18} size={2} />
       </ReactFlow>
+      {showWelcomeCard ? (
+        <div className="welcome-card-overlay">
+          <div className="welcome-card">
+            <div className="welcome-card-title">Hi! welcome to Zofia</div>
+            <p className="welcome-card-body">
+              Zofia is a visual orchestration studio for scientific data pipelines. Sketch a flow,
+              connect Alger-backed execution, and watch each node report live status as it runs on
+              remote infrastructure. Craft experiments, monitor production, and keep the entire data
+              journey in one elegant canvas.
+            </p>
+            <p className="welcome-card-footnote">Zofia Platform · {PLATFORM_VERSION}</p>
+          </div>
+        </div>
+      ) : null}
       {!compact && (
         <LeftDock
           active={activeDock}

@@ -1,4 +1,6 @@
-﻿:root {
+﻿@import url('https://fonts.googleapis.com/css2?family=Borel&display=swap');
+
+:root {
   --text-color: #0b1221;
   --muted-text: #475569;
   --background: #f5f7fb;
@@ -80,6 +82,98 @@ body {
   user-select: none;
   transition: filter 220ms ease;
 }
+
+
+
+.welcome-card-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 4vw, 64px);
+  pointer-events: none;
+  z-index: 6;
+  overflow: hidden;
+}
+
+.welcome-card {
+  position: relative;
+  width: min(620px, 92vw);
+  padding: clamp(32px, 5vw, 50px);
+  border-radius: 32px;
+  border: 1px solid var(--bar-border);
+  /* background: rgba(255, 255, 255, 0.08); */
+  box-shadow: 0 60px 160px rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  pointer-events: auto;
+  color: rgba(241, 245, 249, 0.96);
+  overflow: hidden;
+}
+
+[data-theme='dark'] .welcome-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  /* background: rgba(15, 23, 42, 0.35); */
+}
+
+.welcome-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: url('/wallpaper.jpg') center/cover no-repeat;
+  filter: blur(5px);
+  transform: scale(1.05);
+  opacity: 0.9;
+  z-index: 0;
+}
+
+.welcome-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.1)
+  );
+  z-index: 0;
+}
+
+.welcome-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-card-title {
+  font-family: 'Borel', cursive;
+  font-size: clamp(2.6rem, 3vw, 3.8rem);
+  margin: 30px 0px 30px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-shadow: 0 8px 30px rgba(15, 23, 42, 0.4);
+  color: inherit;
+}
+
+.welcome-card-body {
+  font-size: 1.05rem;
+  line-height: 1.8;
+  margin: 0 0 18px;
+  color: inherit;
+  text-align: center;
+}
+
+.welcome-card-footnote {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  text-align: center;
+  color: rgba(241, 245, 249, 0.7);
+}
+
 
 .loading-overlay {
   position: absolute;
